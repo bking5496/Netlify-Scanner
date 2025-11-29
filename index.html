@@ -27,8 +27,10 @@
     <div id="app" class="max-w-md mx-auto min-h-screen bg-white shadow-2xl shadow-slate-200 overflow-hidden relative"></div>
 
     <script>
-        // DATABASE CONFIGURATION - Netlify Functions + Neon
+        // DATABASE CONFIGURATION
         // =====================
+        // Detects hosting environment: Netlify (with serverless functions) or static hosting (GitHub Pages)
+        const isNetlify = window.location.hostname.includes('netlify.app') || window.location.hostname === 'localhost';
         const API_ENDPOINT = '/.netlify/functions/db';
 
         // Database helper functions
@@ -36,6 +38,7 @@
             connected: false,
             
             async callAPI(action, data = {}) {
+                if (!isNetlify) return null; // Skip API calls on static hosting
                 try {
                     const response = await fetch(API_ENDPOINT, {
                         method: 'POST',
@@ -55,6 +58,10 @@
             },
             
             async init() {
+                if (!isNetlify) {
+                    console.log('Static hosting detected (GitHub Pages) - using localStorage');
+                    return false;
+                }
                 try {
                     const result = await this.callAPI('init');
                     if (result && result.success) {
