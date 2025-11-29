@@ -19,7 +19,8 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { action, data } = JSON.parse(event.body || '{}');
+    const body = JSON.parse(event.body || '{}');
+    const { action, date, scan, id, batchNumber, palletNumber } = body;
     
     switch (action) {
       case 'init':
@@ -56,7 +57,7 @@ exports.handler = async (event) => {
       case 'insertStockTake':
         await sql`
           INSERT INTO stock_takes (take_date, status)
-          VALUES (${data.take_date}, 'active')
+          VALUES (${date}, 'active')
           ON CONFLICT (take_date) DO NOTHING
         `;
         return {
@@ -68,13 +69,13 @@ exports.handler = async (event) => {
       case 'getStockScans':
         const scans = await sql`
           SELECT * FROM stock_scans 
-          WHERE take_date = ${data.take_date}
+          WHERE take_date = ${date}
           ORDER BY scanned_at DESC
         `;
         return {
           statusCode: 200,
           headers,
-          body: JSON.stringify({ success: true, data: scans })
+          body: JSON.stringify({ success: true, rows: scans })
         };
 
       case 'insertStockScan':
@@ -83,9 +84,9 @@ exports.handler = async (event) => {
             take_date, batch_number, pallet_number, cases_on_pallet,
             actual_cases, stock_code, description, raw_code, device_id, scanned_by
           ) VALUES (
-            ${data.take_date}, ${data.batch_number}, ${data.pallet_number},
-            ${data.cases_on_pallet}, ${data.actual_cases}, ${data.stock_code},
-            ${data.description}, ${data.raw_code}, ${data.device_id}, ${data.scanned_by || 'Unknown'}
+            ${scan.take_date}, ${scan.batch_number}, ${scan.pallet_number},
+            ${scan.cases_on_pallet}, ${scan.actual_cases}, ${scan.stock_code},
+            ${scan.description}, ${scan.raw_code}, ${scan.device_id}, ${scan.scanned_by || 'Unknown'}
           )
           RETURNING *
         `;
@@ -98,9 +99,9 @@ exports.handler = async (event) => {
       case 'checkDuplicate':
         const duplicate = await sql`
           SELECT * FROM stock_scans
-          WHERE take_date = ${data.take_date}
-            AND batch_number = ${data.batch_number}
-            AND pallet_number = ${data.pallet_number}
+          WHERE take_date = ${date}
+            AND batch_number = ${batchNumber}
+            AND pallet_number = ${palletNumber}
           LIMIT 1
         `;
         return {
@@ -108,12 +109,12 @@ exports.handler = async (event) => {
           headers,
           body: JSON.stringify({ 
             success: true, 
-            data: duplicate.length > 0 ? duplicate[0] : null 
+            duplicate: duplicate.length > 0 ? duplicate[0] : null 
           })
         };
 
       case 'deleteStockScan':
-        await sql`DELETE FROM stock_scans WHERE id = ${data.id}`;
+        await sql`DELETE FROM stock_scans WHERE id = ${id}`;
         return {
           statusCode: 200,
           headers,
