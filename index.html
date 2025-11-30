@@ -1983,6 +1983,23 @@
                     alert(isKg ? 'Please enter a valid weight in kg' : 'Please enter a valid quantity');
                     return;
                 }
+
+                if ((this.activeStockTake?.sessionType === 'RM' || this.currentScan?.isRawMaterial) && !this.currentScan?.expiryDate) {
+                    const manualExpiry = prompt('Enter expiry date (YYYY-MM-DD) or leave blank to continue without one:', '');
+                    if (manualExpiry && manualExpiry.trim() !== '') {
+                        const parsedDate = new Date(manualExpiry.trim());
+                        if (isNaN(parsedDate.getTime())) {
+                            alert('Invalid expiry date format. Please use YYYY-MM-DD.');
+                            return;
+                        }
+                        this.currentScan.expiryDate = parsedDate.toISOString().split('T')[0];
+                    } else {
+                        const proceed = confirm('No expiry date will be recorded for this raw material. Continue?');
+                        if (!proceed) {
+                            return;
+                        }
+                    }
+                }
                 
                 try {
                     await this.saveScan(this.currentScan, actualCases);
