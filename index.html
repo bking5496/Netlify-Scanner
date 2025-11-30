@@ -1568,6 +1568,7 @@
                     // Try to find the stock code in database
                     let foundStockCode = null;
                     let batchNumber = null;
+                    let batchFromDatabase = false;
                     
                     // First, try to match known stock codes
                     const knownStockCodes = Object.keys(rawMaterialsDatabase).sort((a, b) => b.length - a.length);
@@ -1577,8 +1578,25 @@
                             foundStockCode = sc;
                             // Extract batch number from remaining string
                             const remaining = code.substring(sc.length);
-                            // Remove common separators and get batch number
-                            batchNumber = remaining.replace(/^[\-_\s]+/, '').trim() || null;
+                            const extractedBatch = remaining.replace(/^[\-_\s]+/, '').trim() || null;
+                            
+                            // Check if this batch exists in the database for this stock code
+                            const rmInfo = rawMaterialsDatabase[sc];
+                            if (rmInfo && rmInfo.batches && extractedBatch) {
+                                // Try to find a matching batch in the database
+                                const knownBatches = Object.keys(rmInfo.batches);
+                                // Look for exact match first
+                                const exactMatch = knownBatches.find(b => extractedBatch.toUpperCase().includes(b.toUpperCase()) || b.toUpperCase().includes(extractedBatch.toUpperCase()));
+                                if (exactMatch) {
+                                    batchNumber = exactMatch;
+                                    batchFromDatabase = true;
+                                } else {
+                                    // No match found in database - use extracted batch
+                                    batchNumber = extractedBatch;
+                                }
+                            } else {
+                                batchNumber = extractedBatch;
+                            }
                             break;
                         }
                     }
@@ -3977,12 +3995,14 @@
                                             <div class="text-slate-900 font-medium text-sm mb-3 line-clamp-2">${scan.description}</div>
                                             
                                             <div class="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                                                ${scan.sessionType !== 'RM' && scan.palletNumber ? `
                                                 <div class="flex items-center gap-1">
                                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                                                     </svg>
                                                     <span>Pallet ${scan.palletNumber}</span>
                                                 </div>
+                                                ` : ''}
                                                 ${scan.location ? `
                                                     <div class="flex items-center gap-1 text-blue-600">
                                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
