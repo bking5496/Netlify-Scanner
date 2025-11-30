@@ -42,11 +42,33 @@
         // TODO: Replace these with your Supabase project credentials
         const SUPABASE_URL = 'https://exltxjvzsefmaxlgxyio.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4bHR4anZ6c2VmbWF4bGd4eWlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ0NTQ2MjcsImV4cCI6MjA4MDAzMDYyN30.kc5RFVrN5orQ7AqPd51ot-sK1xbWsy_58ToowCvYhZw';
+        const HEARTBEAT_INTERVAL_MS = 15000;
+        const HEARTBEAT_GRACE_MS = 45000;
         
         // Initialize Supabase client (only if on GitHub Pages and credentials are set)
         let supabase = null;
         if (isGitHubPages && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
             supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            try {
+                const cachedSession = JSON.parse(localStorage.getItem('supabaseSessionCache') || 'null');
+                if (cachedSession?.access_token && cachedSession?.refresh_token) {
+                    supabase.auth.setSession({
+                        access_token: cachedSession.access_token,
+                        refresh_token: cachedSession.refresh_token
+                    }).catch(() => localStorage.removeItem('supabaseSessionCache'));
+                }
+                supabase.auth.onAuthStateChange((_event, session) => {
+                    if (session?.access_token && session?.refresh_token) {
+                        localStorage.setItem('supabaseSessionCache', JSON.stringify({
+                            access_token: session.access_token,
+                            refresh_token: session.refresh_token,
+                            expires_at: session.expires_at
+                        }));
+                    }
+                });
+            } catch (err) {
+                console.warn('Supabase session cache error', err);
+            }
         }
 
         // Database helper - uses Netlify Functions OR Supabase OR localStorage
@@ -440,8 +462,15 @@
                     console.error('Error checking duplicate:', error);
                     return null;
                 }
-                
-                return data && data.length > 0 ? data[0] : null;
+                if (data && data.length > 0) {
+                    await logClientEvent('duplicate-detected', 'warning', sessionId, {
+                        batchNumber,
+                        stockCode,
+                        sessionType
+                    });
+                    return data[0];
+                }
+                return null;
             } catch (err) {
                 console.error('Failed to check duplicate in Supabase:', err);
                 return null;
@@ -563,11 +592,15 @@
         
         // Session settings
         const getSessionSettings = () => {
-            const data = localStorage.getItem('sessionSettings');
-            return data ? JSON.parse(data) : {
+            const defaults = {
                 locationScanningEnabled: false,
-                currentLocation: ''
+                currentLocation: '',
+                site: '',
+                aisle: '',
+                rack: ''
             };
+            const data = localStorage.getItem('sessionSettings');
+            return data ? { ...defaults, ...JSON.parse(data) } : defaults;
         };
         const saveSessionSettings = (settings) => {
             localStorage.setItem('sessionSettings', JSON.stringify(settings));
@@ -634,12 +667,14 @@
                     existingDevice.status = 'active';
                     existingDevice.userName = userName;
                     existingDevice.rejoinedAt = new Date().toISOString();
+                    existingDevice.lastSeen = new Date().toISOString();
                 } else {
                     sessions[idx].devices.push({
                         deviceId: deviceId,
                         userName: userName,
                         status: 'active',
-                        joinedAt: new Date().toISOString()
+                        joinedAt: new Date().toISOString(),
+                        lastSeen: new Date().toISOString()
                     });
                 }
                 saveSessionsForDate(date, sessions);
@@ -660,6 +695,7 @@
                     if (device) {
                         device.status = 'completed';
                         device.completedAt = new Date().toISOString();
+                        device.lastSeen = new Date().toISOString();
                     }
                 }
                 // Check if all devices are completed
@@ -726,11 +762,20 @@
                     .eq('take_date', date)
                     .order('session_number', { ascending: true });
                 if (error) throw error;
-                const mapped = (data || []).map(mapSupabaseSession);
+                let mapped = (data || []).map(mapSupabaseSession);
+                const sessionIds = mapped.map(s => s.id).filter(Boolean);
+                if (sessionIds.length > 0) {
+                    const devicesBySession = await fetchSessionDevicesMap(sessionIds);
+                    mapped = mapped.map(session => ({
+                        ...session,
+                        devices: devicesBySession[session.id] || session.devices || []
+                    }));
+                }
                 saveSessionsForDate(date, mapped);
                 return mapped;
             } catch (err) {
                 console.error('Failed to sync sessions from Supabase:', err);
+                await logClientEvent('session-sync-failed', 'error', null, { date, message: err.message });
                 return null;
             }
         }
@@ -745,6 +790,110 @@
                 if (error) throw error;
             } catch (err) {
                 console.error('Failed to save session to Supabase:', err);
+                await logClientEvent('session-save-failed', 'error', session?.id || null, { message: err.message });
+            }
+        }
+
+        async function fetchSessionDevicesMap(sessionIds = []) {
+            if (!supabaseSessionsEnabled || sessionIds.length === 0) return {};
+            try {
+                const { data, error } = await supabase
+                    .from('session_devices')
+                    .select('*')
+                    .in('session_id', sessionIds);
+                if (error) throw error;
+                return (data || []).reduce((acc, device) => {
+                    if (!acc[device.session_id]) {
+                        acc[device.session_id] = [];
+                    }
+                    acc[device.session_id].push({
+                        id: device.id,
+                        sessionId: device.session_id,
+                        deviceId: device.device_id,
+                        userName: device.user_name,
+                        role: device.role,
+                        status: device.status,
+                        lastSeen: device.last_seen,
+                        joinedAt: device.joined_at,
+                        leftAt: device.left_at
+                    });
+                    return acc;
+                }, {});
+            } catch (err) {
+                console.error('Failed to load session devices:', err);
+                await logClientEvent('session-devices-failed', 'error', null, { ids: sessionIds, message: err.message });
+                return {};
+            }
+        }
+
+        async function upsertSessionDevicePresence(sessionId, status = 'active') {
+            if (!supabaseSessionsEnabled || !sessionId) return;
+            try {
+                await supabase.rpc('upsert_session_device', {
+                    p_session_id: sessionId,
+                    p_device_id: DEVICE_ID,
+                    p_user_name: getUserName() || 'Unknown',
+                    p_role: 'operator',
+                    p_status: status
+                });
+            } catch (err) {
+                console.error('Heartbeat failed:', err);
+                await logClientEvent('heartbeat-failed', 'warning', sessionId, { status, message: err.message });
+            }
+        }
+
+        async function changeSessionStatusSupabase(session, nextStatus, reason = '', metadata = {}) {
+            if (!supabaseSessionsEnabled || !session?.id) return null;
+            try {
+                const { data: existing } = await supabase
+                    .from('stock_takes')
+                    .select('status')
+                    .eq('id', session.id)
+                    .maybeSingle();
+                const timestamps = {
+                    paused_at: nextStatus === 'paused' ? new Date().toISOString() : session.paused_at,
+                    resumed_at: nextStatus === 'active' ? new Date().toISOString() : session.resumed_at,
+                    completed_at: nextStatus === 'completed' ? new Date().toISOString() : session.completed_at
+                };
+                const { data, error } = await supabase
+                    .from('stock_takes')
+                    .update({ status: nextStatus, metadata: { ...(session.metadata || {}), ...metadata }, ...timestamps })
+                    .eq('id', session.id)
+                    .select()
+                    .maybeSingle();
+                if (error) throw error;
+                await supabase
+                    .from('session_status_events')
+                    .insert({
+                        session_id: session.id,
+                        previous_status: existing?.status || session.status,
+                        next_status: nextStatus,
+                        reason,
+                        actor: getUserName() || 'Unknown',
+                        actor_device_id: DEVICE_ID,
+                        metadata
+                    });
+                await updateSession(session.date, session.id, { status: nextStatus, ...timestamps, metadata: { ...(session.metadata || {}), ...metadata } });
+                return data;
+            } catch (err) {
+                console.error('Failed to update session status:', err);
+                await logClientEvent('session-status-failed', 'error', session?.id || null, { nextStatus, reason, message: err.message });
+                return null;
+            }
+        }
+
+        async function logClientEvent(eventType, severity = 'info', sessionId = null, payload = {}) {
+            if (!supabase) return;
+            try {
+                await supabase.rpc('log_event', {
+                    p_event_type: eventType,
+                    p_severity: severity,
+                    p_session_id: sessionId,
+                    p_device_id: DEVICE_ID,
+                    p_payload: payload
+                });
+            } catch (err) {
+                console.warn('log_event failed', err);
             }
         }
 
@@ -769,6 +918,10 @@
                 this.pendingScan = null;
                 this.currentTakeDate = new Date().toISOString().split('T')[0];
                 this.syncInterval = null;
+                this.heartbeatInterval = null;
+                this.lastHeartbeatAt = 0;
+                this.isGitHubPages = isGitHubPages;
+                this.hasPrefetchedReferenceData = false;
                 this.activeStockTake = getActiveStockTake();
                 this.sessionSettings = getSessionSettings();
                 this.lastSessionSync = 0;
@@ -784,6 +937,9 @@
                 this.sessionSettings.locationScanningEnabled = !this.sessionSettings.locationScanningEnabled;
                 if (!this.sessionSettings.locationScanningEnabled) {
                     this.sessionSettings.currentLocation = '';
+                    this.sessionSettings.site = '';
+                    this.sessionSettings.aisle = '';
+                    this.sessionSettings.rack = '';
                 }
                 saveSessionSettings(this.sessionSettings);
                 this.render();
@@ -794,12 +950,40 @@
                 saveSessionSettings(this.sessionSettings);
                 this.render();
             }
+
+            updateLocationHierarchy(level, value) {
+                if (!['site', 'aisle', 'rack'].includes(level)) return;
+                this.sessionSettings[level] = value.trim();
+                saveSessionSettings(this.sessionSettings);
+                this.render();
+            }
             
             promptForLocation() {
                 const location = prompt('Enter Location (e.g., Rack A1, Floor 1, Bin 23):', this.sessionSettings.currentLocation || '');
                 if (location !== null) {
                     this.setLocation(location.trim());
                 }
+            }
+
+            triggerHaptic(type = 'light') {
+                if (!navigator.vibrate) return;
+                const patterns = {
+                    success: [40, 20, 40],
+                    warning: [100, 50, 100],
+                    heavy: [200],
+                    light: [20]
+                };
+                navigator.vibrate(patterns[type] || patterns.light);
+            }
+
+            async prefetchReferenceData() {
+                if (!supabase) return;
+                await Promise.all([
+                    loadProductsFromSupabase(),
+                    loadRawMaterialsFromSupabase(),
+                    loadProductTypesFromSupabase()
+                ]);
+                this.hasPrefetchedReferenceData = true;
             }
 
             async refreshSessionsFromSupabase(force = false) {
@@ -832,12 +1016,19 @@
                         this.startAutoSync();
                     }
                     await this.loadScans();
+                    if (supabaseSessionsEnabled) {
+                        this.startHeartbeat('active');
+                    }
                 } else {
                     // Show start stock take screen
                     this.showingStartStockTake = true;
                 }
                 
                 this.render();
+            }
+
+            isOfflineMode() {
+                return !this.useNeonDB && !(supabaseSessionsEnabled && this.activeStockTake?.id);
             }
 
             selectStockTakeType(type, userName) {
@@ -858,6 +1049,9 @@
                 
                 setUserName(userName.trim());
                 await this.refreshSessionsFromSupabase(true);
+                if (!this.hasPrefetchedReferenceData) {
+                    await this.prefetchReferenceData();
+                }
                 
                 // Get next session number for today (per type)
                 const sessionNumber = getNextSessionNumber(this.currentTakeDate, sessionType);
@@ -867,7 +1061,8 @@
                     deviceId: DEVICE_ID, 
                     userName: userName.trim(), 
                     status: 'active',
-                    joinedAt: new Date().toISOString()
+                    joinedAt: new Date().toISOString(),
+                    lastSeen: new Date().toISOString()
                 };
                 
                 this.activeStockTake = {
@@ -906,8 +1101,12 @@
                     await this.ensureStockTake();
                     this.startAutoSync();
                 }
+                if (supabaseSessionsEnabled) {
+                    this.startHeartbeat('active');
+                }
                 
                 this.loadScans();
+                this.triggerHaptic('success');
                 this.render();
             }
             
@@ -919,6 +1118,9 @@
                 
                 setUserName(userName.trim());
                 await this.refreshSessionsFromSupabase();
+                if (!this.hasPrefetchedReferenceData) {
+                    await this.prefetchReferenceData();
+                }
                 
                 // Join the session
                 const updatedSession = await joinSession(this.currentTakeDate, sessionId, DEVICE_ID, userName.trim());
@@ -949,8 +1151,12 @@
                     await this.ensureStockTake();
                     this.startAutoSync();
                 }
+                if (supabaseSessionsEnabled) {
+                    this.startHeartbeat('active');
+                }
                 
                 this.loadScans();
+                this.triggerHaptic('success');
                 this.render();
             }
 
@@ -967,6 +1173,10 @@
                         if (updatedSession && updatedSession.status === 'completed') {
                             alert('Session complete! All devices have finished.');
                         }
+                        const hbStatus = updatedSession?.status === 'completed' ? 'completed' : 'inactive';
+                        this.stopHeartbeat(hbStatus);
+                    } else if (supabaseSessionsEnabled) {
+                        this.stopHeartbeat('inactive');
                     }
                     
                     clearActiveStockTake();
@@ -1015,12 +1225,20 @@
                     const updatedSession = await markDeviceCompleted(sessionDate, sessionId, DEVICE_ID);
                     if (updatedSession && updatedSession.status === 'completed') {
                         alert('🎉 Session Complete!\n\nAll devices have finished their stock take.');
+                        await changeSessionStatusSupabase(updatedSession, 'completed', 'All devices completed');
                     } else if (updatedSession) {
                         const remaining = updatedSession.devices?.filter(d => d.status === 'active').length || 0;
                         if (remaining > 0) {
                             alert(`Your stock take is complete.\n\n${remaining} device(s) still counting.`);
                         }
                     }
+                    if (supabaseSessionsEnabled) {
+                        const hbStatus = updatedSession?.status === 'completed' ? 'completed' : 'inactive';
+                        this.stopHeartbeat(hbStatus);
+                    }
+                }
+                if (!sessionId && supabaseSessionsEnabled) {
+                    this.stopHeartbeat('inactive');
                 }
                 
                 clearActiveStockTake();
@@ -1063,6 +1281,9 @@
                             sessionType: row.session_type || 'FP',
                             expiryDate: row.expiry_date,
                             location: row.location,
+                            site: row.site,
+                            aisle: row.aisle,
+                            rack: row.rack,
                             unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
                         }));
                 } else if (this.isGitHubPages && supabase && sessionId) {
@@ -1076,6 +1297,7 @@
                         
                         if (error) {
                             console.error('Error loading scans from Supabase:', error);
+                            await logClientEvent('scan-load-failed', 'error', sessionId, { message: error.message });
                             this.scans = [];
                             return;
                         }
@@ -1098,12 +1320,16 @@
                             sessionType: row.session_type || sessionType,
                             expiryDate: row.expiry_date,
                             location: row.location,
+                            site: row.site,
+                            aisle: row.aisle,
+                            rack: row.rack,
                             unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
                         }));
                         
                         console.log(`Loaded ${this.scans.length} scans from stock_scans for session ${sessionId}`);
                     } catch (err) {
                         console.error('Failed to load scans from Supabase:', err);
+                        await logClientEvent('scan-load-failed', 'error', sessionId, { message: err.message });
                         this.scans = [];
                     }
                 } else {
@@ -1121,6 +1347,27 @@
                     this.loadScans();
                     this.render();
                 }, 5000);
+            }
+
+            startHeartbeat(status = 'active') {
+                if (!supabaseSessionsEnabled || !this.activeStockTake?.id) return;
+                this.stopHeartbeat();
+                const send = async () => {
+                    await upsertSessionDevicePresence(this.activeStockTake.id, status);
+                    this.lastHeartbeatAt = Date.now();
+                };
+                send();
+                this.heartbeatInterval = setInterval(send, HEARTBEAT_INTERVAL_MS);
+            }
+
+            stopHeartbeat(status = 'inactive') {
+                if (this.heartbeatInterval) {
+                    clearInterval(this.heartbeatInterval);
+                    this.heartbeatInterval = null;
+                }
+                if (supabaseSessionsEnabled && this.activeStockTake?.id && status) {
+                    upsertSessionDevicePresence(this.activeStockTake.id, status);
+                }
             }
 
             async getPreferredCameraId() {
@@ -1474,6 +1721,17 @@
                 const userName = getUserName();
                 const sessionType = this.activeStockTake?.sessionType || 'FP';
                 const sessionId = this.activeStockTake?.id || null;
+                const locationPayload = this.sessionSettings.locationScanningEnabled ? {
+                    location: this.sessionSettings.currentLocation || null,
+                    site: this.sessionSettings.site || null,
+                    aisle: this.sessionSettings.aisle || null,
+                    rack: this.sessionSettings.rack || null
+                } : {
+                    location: null,
+                    site: null,
+                    aisle: null,
+                    rack: null
+                };
                 console.log('Saving scan:', { parsedData, actualCases, userName, useNeonDB: this.useNeonDB, isGitHubPages: this.isGitHubPages, sessionType, sessionId });
                 
                 if (this.useNeonDB) {
@@ -1490,9 +1748,16 @@
                         scanned_by: userName,
                         session_type: sessionType,
                         expiry_date: parsedData.expiryDate || null,
-                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                        location: locationPayload.location,
+                        site: locationPayload.site,
+                        aisle: locationPayload.aisle,
+                        rack: locationPayload.rack,
                         unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
                     });
+                    if (!result) {
+                        await logClientEvent('scan-insert-failed', 'error', sessionId, { transport: 'netlify', batch: parsedData.batchNumber });
+                        throw new Error('Failed to insert scan via Netlify Functions');
+                    }
                     console.log('Insert result:', result);
                 } else if (this.isGitHubPages && supabase && sessionId) {
                     // Save ALL scans to stock_scans table
@@ -1506,7 +1771,10 @@
                             scanned_by: userName,
                             device_id: DEVICE_ID,
                             session_type: sessionType,
-                            location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                            location: locationPayload.location,
+                            site: locationPayload.site,
+                            aisle: locationPayload.aisle,
+                            rack: locationPayload.rack,
                             unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases'),
                             actual_cases: actualCases,
                             pallet_number: parsedData.palletNumber || null,
@@ -1522,12 +1790,15 @@
                         
                         if (error) {
                             console.error('Supabase insert error:', error);
+                            await logClientEvent('scan-insert-failed', 'error', sessionId, { error: error.message, record });
                             throw error;
                         }
                         
                         console.log('Saved to Supabase stock_scans:', data);
+                        await logClientEvent('scan-insert', 'info', sessionId, { scanId: data?.[0]?.id || null });
                     } catch (err) {
                         console.error('Failed to save to Supabase:', err);
+                        await logClientEvent('scan-insert-failed', 'error', sessionId, { message: err.message });
                         alert('Failed to save scan to database. Please check your connection.');
                         throw err;
                     }
@@ -1551,7 +1822,10 @@
                         sessionType: sessionType,
                         expiryDate: parsedData.expiryDate || null,
                         isRawMaterial: parsedData.isRawMaterial || false,
-                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                        location: locationPayload.location,
+                        site: locationPayload.site,
+                        aisle: locationPayload.aisle,
+                        rack: locationPayload.rack,
                         unitType: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
                     };
                     
@@ -1561,6 +1835,7 @@
                 await this.loadScans();
                 this.currentScan = null;
                 this.showingCaseEntry = false;
+                this.triggerHaptic('success');
                 this.render();
             }
 
@@ -1577,10 +1852,12 @@
                         
                         if (error) {
                             console.error('Supabase delete error:', error);
+                            await logClientEvent('scan-delete-failed', 'error', this.activeStockTake?.id || null, { scanId: id, message: error.message });
                             throw error;
                         }
                         
                         console.log('Deleted from stock_scans:', id);
+                        await logClientEvent('scan-delete', 'warning', this.activeStockTake?.id || null, { scanId: id });
                     } catch (err) {
                         console.error('Failed to delete from Supabase:', err);
                         alert('Failed to delete scan from database.');
@@ -1590,6 +1867,7 @@
                 }
                 
                 await this.loadScans();
+                this.triggerHaptic('heavy');
                 this.render();
             }
 
@@ -1614,6 +1892,29 @@
             cancelCaseEntry() {
                 this.currentScan = null;
                 this.showingCaseEntry = false;
+                this.render();
+            }
+
+            async toggleSessionPause() {
+                if (!this.activeStockTake?.id) return;
+                const nextStatus = this.activeStockTake.status === 'paused' ? 'active' : 'paused';
+                const reason = nextStatus === 'paused' ? prompt('Reason for pausing this session? (optional)', '') || 'Paused manually' : 'Resumed manually';
+                if (supabaseSessionsEnabled) {
+                    await changeSessionStatusSupabase(this.activeStockTake, nextStatus, reason, {});
+                } else {
+                    await updateSession(this.activeStockTake.date, this.activeStockTake.id, { status: nextStatus });
+                }
+                this.activeStockTake = { ...this.activeStockTake, status: nextStatus };
+                setActiveStockTake(this.activeStockTake);
+                if (nextStatus === 'paused') {
+                    this.stopHeartbeat('paused');
+                    this.triggerHaptic('warning');
+                } else {
+                    if (supabaseSessionsEnabled) {
+                        this.startHeartbeat('active');
+                    }
+                    this.triggerHaptic('success');
+                }
                 this.render();
             }
             
@@ -1793,6 +2094,9 @@
                             cases: item.actual_cases,
                             palletNumber: item.pallet_number,
                             location: item.location,
+                            site: item.site,
+                            aisle: item.aisle,
+                            rack: item.rack,
                             expiryDate: item.expiry_date,
                             unitType: item.unit_type || (session.sessionType === 'RM' ? 'kg' : 'cases'),
                             timestamp: item.scanned_at,
@@ -1800,6 +2104,7 @@
                         }));
                     } catch (error) {
                         console.error('Error loading history scans:', error);
+                        await logClientEvent('history-load-failed', 'error', sessionId, { message: error.message });
                         alert('Error loading session scans. Check console for details.');
                     }
                 } else {
@@ -1836,6 +2141,9 @@
                         base['Pallet Number'] = scan.palletNumber || '';
                         base['Location'] = scan.location || '';
                     }
+                    base['Site'] = scan.site || '';
+                    base['Aisle'] = scan.aisle || '';
+                    base['Rack'] = scan.rack || '';
                     
                     base['Scanned By'] = scan.scannedBy || '';
                     base['Timestamp'] = new Date(scan.timestamp).toLocaleString();
@@ -2127,6 +2435,10 @@
                     'Cases on Pallet': scan.casesOnPallet,
                     'Actual Cases': scan.actualCases,
                     'Variance': scan.actualCases - scan.casesOnPallet,
+                    'Site': scan.site || '',
+                    'Aisle': scan.aisle || '',
+                    'Rack': scan.rack || '',
+                    'Location Notes': scan.location || '',
                     'Scanned At': scan.date + ' ' + scan.time,
                     'Device ID': scan.deviceId,
                     'Raw QR Code': scan.raw
@@ -3014,6 +3326,38 @@
                                                             Set
                                                         </button>
                                                     </div>
+                                                    <div class="grid grid-cols-3 gap-2 mt-3">
+                                                        <div>
+                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Site</label>
+                                                            <input 
+                                                                type="text"
+                                                                value="${this.sessionSettings.site || ''}"
+                                                                oninput="app.updateLocationHierarchy('site', this.value)"
+                                                                placeholder="Plant"
+                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Aisle</label>
+                                                            <input 
+                                                                type="text"
+                                                                value="${this.sessionSettings.aisle || ''}"
+                                                                oninput="app.updateLocationHierarchy('aisle', this.value)"
+                                                                placeholder="Aisle"
+                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Rack</label>
+                                                            <input 
+                                                                type="text"
+                                                                value="${this.sessionSettings.rack || ''}"
+                                                                oninput="app.updateLocationHierarchy('rack', this.value)"
+                                                                placeholder="Rack"
+                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                            />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ` : ''}
                                         </div>
@@ -3077,18 +3421,35 @@
                                             ${(() => {
                                                 const session = this.activeStockTake?.id ? getSessionById(this.currentTakeDate, this.activeStockTake.id) : null;
                                                 if (session?.devices && session.devices.length > 0) {
-                                                    const activeCount = session.devices.filter(d => d.status === 'active').length;
+                                                    const now = Date.now();
+                                                    const activeDevices = session.devices.filter(d => d.status === 'active');
+                                                    const staleDevices = activeDevices.filter(d => {
+                                                        if (!d.lastSeen) return false;
+                                                        const last = new Date(d.lastSeen).getTime();
+                                                        return now - last > HEARTBEAT_GRACE_MS;
+                                                    });
+                                                    const liveActive = activeDevices.length - staleDevices.length;
                                                     const completedCount = session.devices.filter(d => d.status === 'completed').length;
                                                     return `
                                                         <span class="text-xs text-slate-400">•</span>
                                                         <span class="text-xs text-emerald-600 font-medium flex items-center gap-1">
                                                             <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                                                            ${activeCount} active${completedCount > 0 ? `, ${completedCount} done` : ''}
+                                                            ${liveActive} active${completedCount > 0 ? `, ${completedCount} done` : ''}
                                                         </span>
+                                                        ${staleDevices.length > 0 ? `
+                                                            <span class="text-xs text-red-500 font-medium flex items-center gap-1">
+                                                                <span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+                                                                ${staleDevices.length} idle
+                                                            </span>
+                                                        ` : ''}
                                                     `;
                                                 }
                                                 return '';
                                             })()}
+                                            <span class="text-xs font-medium flex items-center gap-1 ${this.isOfflineMode() ? 'text-amber-600' : 'text-emerald-600'}">
+                                                <span class="w-1.5 h-1.5 rounded-full ${this.isOfflineMode() ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse"></span>
+                                                ${this.isOfflineMode() ? 'Offline cache' : 'Online'}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -3128,6 +3489,11 @@
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                                 </svg>
                                                 Export
+                                            </button>
+                                        ` : ''}
+                                        ${this.activeStockTake ? `
+                                            <button onclick="app.toggleSessionPause()" class="${this.activeStockTake.status === 'paused' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'} px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+                                                ${this.activeStockTake.status === 'paused' ? 'Resume' : 'Pause'}
                                             </button>
                                         ` : ''}
                                         <button onclick="app.endStockTake()" class="bg-slate-50 text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl text-sm font-bold transition-colors">
@@ -3173,7 +3539,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                                     </svg>
-                                    <span>${this.sessionSettings.currentLocation || 'Tap to set location'}</span>
+                                    <span>${[this.sessionSettings.site, this.sessionSettings.aisle, this.sessionSettings.rack].filter(Boolean).join(' › ') || this.sessionSettings.currentLocation || 'Tap to set location'}</span>
                                 </button>
                             ` : ''}
                         </div>
