@@ -45,9 +45,19 @@
         const HEARTBEAT_INTERVAL_MS = 15000;
         const HEARTBEAT_GRACE_MS = 45000;
         
-        // Initialize Supabase client (only if on GitHub Pages and credentials are set)
+        const SUPABASE_PLACEHOLDER_URL = 'https://YOUR_PROJECT_ID.supabase.co';
+        const SUPABASE_PLACEHOLDER_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        const supabaseCredentialsConfigured = Boolean(window.supabase?.createClient)
+            && Boolean(SUPABASE_URL)
+            && Boolean(SUPABASE_ANON_KEY)
+            && SUPABASE_URL !== SUPABASE_PLACEHOLDER_URL
+            && !SUPABASE_URL.includes('YOUR_PROJECT_ID')
+            && SUPABASE_ANON_KEY !== SUPABASE_PLACEHOLDER_KEY
+            && !SUPABASE_ANON_KEY.includes('YOUR_SUPABASE_ANON_KEY');
+
+        // Initialize Supabase client whenever credentials exist
         let supabase = null;
-        if (isGitHubPages && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
+        if (supabaseCredentialsConfigured) {
             supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             try {
                 const cachedSession = JSON.parse(localStorage.getItem('supabaseSessionCache') || 'null');
@@ -925,6 +935,7 @@
                 this.activeStockTake = getActiveStockTake();
                 this.sessionSettings = getSessionSettings();
                 this.lastSessionSync = 0;
+                this.isBrowserOnline = navigator.onLine;
                 
                 this.init();
             }
@@ -987,7 +998,7 @@
             }
 
             async refreshSessionsFromSupabase(force = false) {
-                if (!supabaseSessionsEnabled) return;
+                if (!supabaseSessionsEnabled || !this.isBrowserOnline) return;
                 const now = Date.now();
                 if (!force && this.lastSessionSync && (now - this.lastSessionSync) < 5000) {
                     return;
@@ -1002,7 +1013,7 @@
                 await this.refreshSessionsFromSupabase(true);
                 
                 // Load products from Supabase (for GitHub Pages deployment)
-                if (isGitHubPages || !isNetlify) {
+                if (supabase) {
                     await loadProductsFromSupabase();
                     await loadRawMaterialsFromSupabase();
                     await loadProductTypesFromSupabase();
@@ -1013,8 +1024,8 @@
                     // Continue with existing stock take
                     if (this.useNeonDB) {
                         await this.ensureStockTake();
-                        this.startAutoSync();
                     }
+                    this.startAutoSync();
                     await this.loadScans();
                     if (supabaseSessionsEnabled) {
                         this.startHeartbeat('active');
@@ -1028,7 +1039,30 @@
             }
 
             isOfflineMode() {
+                if (!this.isBrowserOnline) {
+                    return true;
+                }
                 return !this.useNeonDB && !(supabaseSessionsEnabled && this.activeStockTake?.id);
+            }
+
+            async handleConnectivityChange(isOnline) {
+                this.isBrowserOnline = isOnline;
+                if (!isOnline) {
+                    if (supabaseSessionsEnabled && this.activeStockTake?.id) {
+                        this.stopHeartbeat('offline');
+                    }
+                    this.render();
+                    return;
+                }
+
+                if (supabaseSessionsEnabled && this.activeStockTake?.id) {
+                    const hbStatus = this.activeStockTake.status === 'paused' ? 'paused' : 'active';
+                    this.startHeartbeat(hbStatus);
+                }
+
+                await this.refreshSessionsFromSupabase(true);
+                await this.loadScans();
+                this.render();
             }
 
             selectStockTakeType(type, userName) {
@@ -1099,8 +1133,8 @@
                 
                 if (this.useNeonDB) {
                     await this.ensureStockTake();
-                    this.startAutoSync();
                 }
+                this.startAutoSync();
                 if (supabaseSessionsEnabled) {
                     this.startHeartbeat('active');
                 }
@@ -1149,8 +1183,8 @@
                 
                 if (this.useNeonDB) {
                     await this.ensureStockTake();
-                    this.startAutoSync();
                 }
+                this.startAutoSync();
                 if (supabaseSessionsEnabled) {
                     this.startHeartbeat('active');
                 }
@@ -1178,7 +1212,7 @@
                     } else if (supabaseSessionsEnabled) {
                         this.stopHeartbeat('inactive');
                     }
-                    
+                    this.stopAutoSync();
                     clearActiveStockTake();
                     this.activeStockTake = null;
                     this.selectedStockTakeType = null;
@@ -1241,6 +1275,7 @@
                     this.stopHeartbeat('inactive');
                 }
                 
+                this.stopAutoSync();
                 clearActiveStockTake();
                 this.activeStockTake = null;
                 this.scans = [];
@@ -1286,7 +1321,7 @@
                             rack: row.rack,
                             unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
                         }));
-                } else if (this.isGitHubPages && supabase && sessionId) {
+                } else if (supabase && sessionId) {
                     // Load ALL scans from stock_scans table, filtered by session
                     try {
                         const { data, error } = await supabase
@@ -1342,17 +1377,41 @@
             }
 
             startAutoSync() {
-                // Sync every 5 seconds
-                this.syncInterval = setInterval(() => {
-                    this.loadScans();
-                    this.render();
-                }, 5000);
+                this.stopAutoSync();
+                const canSync = this.useNeonDB || (supabaseSessionsEnabled && this.activeStockTake?.id);
+                if (!canSync) {
+                    return;
+                }
+                const runSync = async () => {
+                    if (!this.isBrowserOnline) return;
+                    try {
+                        if (this.useNeonDB) {
+                            await this.loadScans();
+                        } else if (supabaseSessionsEnabled && this.activeStockTake?.id) {
+                            await this.refreshSessionsFromSupabase();
+                            await this.loadScans();
+                        }
+                        this.render();
+                    } catch (err) {
+                        console.warn('Auto-sync failed', err);
+                    }
+                };
+                runSync();
+                this.syncInterval = setInterval(runSync, 5000);
+            }
+
+            stopAutoSync() {
+                if (this.syncInterval) {
+                    clearInterval(this.syncInterval);
+                    this.syncInterval = null;
+                }
             }
 
             startHeartbeat(status = 'active') {
-                if (!supabaseSessionsEnabled || !this.activeStockTake?.id) return;
+                if (!supabaseSessionsEnabled || !this.activeStockTake?.id || !this.isBrowserOnline) return;
                 this.stopHeartbeat();
                 const send = async () => {
+                    if (!this.isBrowserOnline) return;
                     await upsertSessionDevicePresence(this.activeStockTake.id, status);
                     this.lastHeartbeatAt = Date.now();
                 };
@@ -1365,7 +1424,7 @@
                     clearInterval(this.heartbeatInterval);
                     this.heartbeatInterval = null;
                 }
-                if (supabaseSessionsEnabled && this.activeStockTake?.id && status) {
+                if (supabaseSessionsEnabled && this.activeStockTake?.id && status && this.isBrowserOnline) {
                     upsertSessionDevicePresence(this.activeStockTake.id, status);
                 }
             }
@@ -1537,7 +1596,7 @@
             async checkDuplicate(batchNumber, palletNumber, stockCode = null, expiryDate = null) {
                 if (this.useNeonDB) {
                     return await db.checkDuplicate(this.currentTakeDate, batchNumber, palletNumber);
-                } else if (this.isGitHubPages && this.activeStockTake?.id) {
+                } else if (supabase && this.activeStockTake?.id) {
                     // Live check against Supabase stock_scans for all devices in this session
                     const sessionType = this.activeStockTake?.sessionType || 'FP';
                     return await checkDuplicateInSupabase(
@@ -1759,7 +1818,7 @@
                         throw new Error('Failed to insert scan via Netlify Functions');
                     }
                     console.log('Insert result:', result);
-                } else if (this.isGitHubPages && supabase && sessionId) {
+                } else if (supabase && sessionId) {
                     // Save ALL scans to stock_scans table
                     try {
                         const record = {
@@ -1842,7 +1901,7 @@
             async deleteScan(id) {
                 if (this.useNeonDB) {
                     await db.deleteStockScan(id);
-                } else if (this.isGitHubPages && supabase) {
+                } else if (supabase) {
                     // Delete from stock_scans table
                     try {
                         const { error } = await supabase
@@ -2075,41 +2134,45 @@
                 
                 this.selectedHistorySession = session;
                 
-                // Load scans from Supabase stock_scans table
-                if (this.isGitHubPages) {
-                    try {
-                        const { data, error } = await supabase
-                            .from('stock_scans')
-                            .select('*')
-                            .eq('session_id', sessionId)
-                            .order('scanned_at', { ascending: true });
-                        
-                        if (error) throw error;
-                        
-                        this.historyScans = (data || []).map(item => ({
-                            id: item.id,
-                            batchNumber: item.batch_number,
-                            stockCode: item.stock_code,
-                            description: item.description,
-                            cases: item.actual_cases,
-                            palletNumber: item.pallet_number,
-                            location: item.location,
-                            site: item.site,
-                            aisle: item.aisle,
-                            rack: item.rack,
-                            expiryDate: item.expiry_date,
-                            unitType: item.unit_type || (session.sessionType === 'RM' ? 'kg' : 'cases'),
-                            timestamp: item.scanned_at,
-                            scannedBy: item.scanned_by
-                        }));
-                    } catch (error) {
-                        console.error('Error loading history scans:', error);
-                        await logClientEvent('history-load-failed', 'error', sessionId, { message: error.message });
-                        alert('Error loading session scans. Check console for details.');
-                    }
-                } else {
-                    // For Netlify/Neon, we'd need API support
-                    alert('Session history is only available on GitHub Pages deployment');
+                if (!supabase) {
+                    alert('Session history requires Supabase connectivity.');
+                    return;
+                }
+
+                if (!this.isBrowserOnline) {
+                    alert('Session history is unavailable while offline.');
+                    return;
+                }
+
+                try {
+                    const { data, error } = await supabase
+                        .from('stock_scans')
+                        .select('*')
+                        .eq('session_id', sessionId)
+                        .order('scanned_at', { ascending: true });
+                    
+                    if (error) throw error;
+                    
+                    this.historyScans = (data || []).map(item => ({
+                        id: item.id,
+                        batchNumber: item.batch_number,
+                        stockCode: item.stock_code,
+                        description: item.description,
+                        cases: item.actual_cases,
+                        palletNumber: item.pallet_number,
+                        location: item.location,
+                        site: item.site,
+                        aisle: item.aisle,
+                        rack: item.rack,
+                        expiryDate: item.expiry_date,
+                        unitType: item.unit_type || (session.sessionType === 'RM' ? 'kg' : 'cases'),
+                        timestamp: item.scanned_at,
+                        scannedBy: item.scanned_by
+                    }));
+                } catch (error) {
+                    console.error('Error loading history scans:', error);
+                    await logClientEvent('history-load-failed', 'error', sessionId, { message: error.message });
+                    alert('Error loading session scans. Check console for details.');
                 }
                 
                 this.render();
@@ -2552,7 +2615,7 @@
                             </div>
                             
                             <div class="p-6 text-center">
-                                ${this.isGitHubPages && supabase ? `
+                                ${supabase && this.isBrowserOnline ? `
                                     <div class="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100">
                                         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                                         <span>Connected to Supabase</span>
@@ -3661,6 +3724,19 @@
         }
 
         const app = new ScannerApp();
+        window.app = app;
+
+        window.addEventListener('online', () => {
+            if (window.app?.handleConnectivityChange) {
+                window.app.handleConnectivityChange(true);
+            }
+        });
+
+        window.addEventListener('offline', () => {
+            if (window.app?.handleConnectivityChange) {
+                window.app.handleConnectivityChange(false);
+            }
+        });
     </script>
 </body>
 </html>
