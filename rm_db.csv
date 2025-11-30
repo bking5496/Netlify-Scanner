@@ -1,4 +1,4 @@
-﻿Stock Code,Stock Description,Batch number,Exp date
+﻿stock_code,description,batch_number,expiry_date
 amcr4x15,amila 4x15 outer carton port,320539,
 amdc4x15x25g,amila generic display carton 4x15x25g,134218,
 amdc4x15x25g,amila generic display carton 4x15x25g,135578,
@@ -94,7 +94,7 @@ amigdext,dextrose,LE2508-47M,07/08/2027
 amiggrandflav,Granadilla Flavour 01.01.0035.SD,290125 111439,28/01/2027
 amiggrandflav,Granadilla Flavour 01.01.0035.SD,290125 111439,29/01/2027
 amiglemflav,lemon flavour 051421,1008351561,07/08/2026
-amiglemlimflav,Lemon & Lime Flavour 01.01.0015.SD,100924110420,10/09/2026
+amiglemlimflav,Lemon & Lime Flavour 01.01.0015.SD,100924000000,10/09/2026
 amigmangflav_1,sonaflo mango alphonso - 060521,24050677,10/12/2025
 amigmangflav_1,sonaflo mango alphonso - 060521,24110476,15/10/2025
 amigmangflav_2,Mango flavor Espray 01.A.02.0085.SD,002173,24/10/2027
@@ -147,7 +147,7 @@ amigvitpre_2,"Vitamin premix A,B1,B2",201110,14/05/2026
 amigvitprem,univit 5206a,25G065,30/06/2026
 amigxant,xanthan gum 80,202411A-N10,12/11/2026
 amigxant,xanthan gum 80,202412A-G19,17/12/2026
-amigxant,xanthan gum 80,520240505051,04/05/2026
+amigxant,xanthan gum 80,520241000000,04/05/2026
 amigxant,xanthan gum 80,HH202406080011,31/05/2026
 amlemstk,amila lemon sticker 25kg,14493,
 ammanstk,amila mango sticker 25kg,5836,
@@ -311,13 +311,13 @@ ccmcr28g150tri,cowbell choc 28gx150 corro (CCM246),725874,
 ccmcr28g150tri,cowbell choc 28gx150 corro (CCM246),739701,
 ccmrl28g150,ccm (80*120) english CCM237,24201092,
 ccmrl28g150,ccm (80*120) english CCM237,25201941,
-ddwcara050,liquid caramel colour ddw050,202501200007,20/01/2027
-ddwcara050,liquid caramel colour ddw050,202503310005,31/03/2027
-ddwcara050,liquid caramel colour ddw050,202504070016,07/04/2027
-ddwcara050,liquid caramel colour ddw050,202504220046,22/04/2027
-ddwcara050,liquid caramel colour ddw050,202505140036,14/05/2027
-ddwcara050,liquid caramel colour ddw050,202506240007,24/06/2027
-ddwcara050,liquid caramel colour ddw050,202509110017,11/09/2027
+ddwcara050,liquid caramel colour ddw050,202501000000,20/01/2027
+ddwcara050,liquid caramel colour ddw050,202503000000,31/03/2027
+ddwcara050,liquid caramel colour ddw050,202504000000,07/04/2027
+ddwcara050,liquid caramel colour ddw050,202504000000,22/04/2027
+ddwcara050,liquid caramel colour ddw050,202505000000,14/05/2027
+ddwcara050,liquid caramel colour ddw050,202506000000,24/06/2027
+ddwcara050,liquid caramel colour ddw050,202509000000,11/09/2027
 ffmp10%b9,fat filled milk powder 10% b9 40000157,BF0193C25,26/02/2027
 ffmp10%b9,fat filled milk powder 10% b9 40000157,BF0193C25,26/06/2027
 ffmp10%b9,fat filled milk powder 10% b9 40000157,BF0198C25,27/02/2027
@@ -541,17 +541,17 @@ ogcvegfat,vegetable fat,TBL 25139,19/11/2026
 ogcvegfat,vegetable fat,TBL 25140,20/11/2026
 ogcvegfat,vegetable fat,TBL 25192,11/01/2027
 ogcvegfat,vegetable fat,TBL25076,17/09/2026
-ogdwcakeflwr,dried wheat cake flour,2025/08/09,09/08/2026
-ogdwcakeflwr,dried wheat cake flour,2025/09/18,18/09/2026
-ogdwcakeflwr,dried wheat cake flour,2026/05/16,16/05/2026
-ogdwcakeflwr,dried wheat cake flour,2026/06/04,04/06/2026
+ogdwcakeflwr,dried wheat cake flour,09/08/2025,09/08/2026
+ogdwcakeflwr,dried wheat cake flour,18/09/2025,18/09/2026
+ogdwcakeflwr,dried wheat cake flour,16/05/2026,16/05/2026
+ogdwcakeflwr,dried wheat cake flour,04/06/2026,04/06/2026
 ogdwcakeflwr,dried wheat cake flour,20260604,04/06/2026
 ogghartpndu,pondu heart powder 20493405,0009339242,26/02/2026
 ogghartpndu,pondu heart powder 20493405,0009445167,18/03/2026
 oggheartpwd,stew heart powder sc437288,0017680011,09/06/2026
 oggheartpwd,stew heart powder sc437288,0018847630,21/04/2027
-oggmaizflour,maize flour (iwisa super cream),2025/08/24,24/08/2026
-oggmaizflour,maize flour (iwisa super cream),2026/02/11,11/02/2026
+oggmaizflour,maize flour (iwisa super cream),24/08/2025,24/08/2026
+oggmaizflour,maize flour (iwisa super cream),11/02/2026,11/02/2026
 oggmaizstrch,maize starch ah1 fully gelatinized fines,25237-10-P2,25/08/2026
 oggmaizstrch,maize starch ah1 fully gelatinized fines,CS27/02/25002074,26/02/2026
 oggmfil-p,mfil-p precipitated silica,421350,18/02/2028
@@ -565,19 +565,19 @@ oggponceau4r,ponceau 4r c008/s,2425648,01/11/2027
 oggponceau4r,ponceau 4r c008/s,PP4RM26292,14/03/2031
 oggponceaulake4r,ponceau lake 4r c411/l/s,LP4RM4453,28/07/2029
 oggponceaulake4r,ponceau lake 4r c411/l/s,LP4RM5443,18/04/2031
-oggsaltmed,iodized salt medium,01/07/25,01/07/2027
+oggsaltmed,iodized salt medium,01/07/2025,01/07/2027
 oggsaltmed,iodized salt medium,03/02/2025,03/02/2027
-oggsaltmed,iodized salt medium,04/04/25,04/04/2027
-oggsaltmed,iodized salt medium,04/10/24,04/10/2026
+oggsaltmed,iodized salt medium,04/04/2025,04/04/2027
+oggsaltmed,iodized salt medium,04/10/2024,04/10/2026
 oggsaltmed,iodized salt medium,05/05/2025,05/05/2027
-oggsaltmed,iodized salt medium,05/05/25,05/05/2027
-oggsaltmed,iodized salt medium,08/09/25,08/09/2027
-oggsaltmed,iodized salt medium,22/07/25,22/07/2027
-oggsaltmed,iodized salt medium,30 Sep 2025,30/09/2027
-ogmmbrnsug,brown sugar,06/06/25,06/06/2027
-ogmmbrnsug,brown sugar,07/06/25,07/06/2027
-ogmmbrnsug,brown sugar,08/05/25,08/05/2027
-ogmmbrnsug,brown sugar,08/06/25,08/06/2027
+oggsaltmed,iodized salt medium,05/05/2025,05/05/2027
+oggsaltmed,iodized salt medium,08/09/2025,08/09/2027
+oggsaltmed,iodized salt medium,22/07/2025,22/07/2027
+oggsaltmed,iodized salt medium,30-Sept-25,30/09/2027
+ogmmbrnsug,brown sugar,06/06/2025,06/06/2027
+ogmmbrnsug,brown sugar,07/06/2025,07/06/2027
+ogmmbrnsug,brown sugar,08/05/2025,08/05/2027
+ogmmbrnsug,brown sugar,08/06/2025,08/06/2027
 ogmmbrnsug,brown sugar,115554,30/06/2028
 ogmmbrnsug,brown sugar,115555,30/06/2028
 ogmmbrnsug,brown sugar,115556,30/06/2028
@@ -619,9 +619,9 @@ ogmmturmor,turmeric or,ZZ217836/11,28/11/2025
 ogmmturmor,turmeric or,ZZ221013/09,11/09/2026
 ogmmvegoil,palm oil,10/06/2025,10/06/2027
 ogmmvegoil,palm oil,14/05/2025,14/05/2027
-ogmmvegoil,palm oil,2025/09/11,11/09/2027
-ogmmvegoil,palm oil,2025/10/09,09/10/2027
-ogmmvegoil,palm oil,2027/06/24,24/06/2027
+ogmmvegoil,palm oil,11/09/2025,11/09/2027
+ogmmvegoil,palm oil,09/10/2025,09/10/2027
+ogmmvegoil,palm oil,24/06/2027,24/06/2027
 ogmmvegoil,palm oil,23/10/2025,23/10/2027
 ogmmvegoil,palm oil,28/10/2025,28/10/2027
 ogorgbag,700x1100x65 mic orange bags,Po-8333,
@@ -1081,14 +1081,14 @@ rm00016,tartrazine,TR-2425/121,22/09/2029
 rm00016,tartrazine,TR-2425/122,24/09/2029
 rm00016,tartrazine,TR-2425/123,25/09/2029
 rm00020,salt ,"01,08/08/24",08/08/2027
-rm00020,salt ,02/09/25,02/09/2027
-rm00020,salt ,06 Oct 2025,06/10/2027
-rm00020,salt ,07 July 2025,07/07/2027
-rm00020,salt ,15 Aug 2025,15/08/2027
-rm00020,salt ,18/06/25,18/06/2027
-rm00020,salt ,20 Oct 2025,20/10/2027
+rm00020,salt ,02/09/2025,02/09/2027
+rm00020,salt ,06-Oct-25,06/10/2027
+rm00020,salt ,07-Jul-25,07/07/2027
+rm00020,salt ,15-Aug-25,15/08/2027
+rm00020,salt ,18/06/2025,18/06/2027
+rm00020,salt ,20-Oct-25,20/10/2027
 rm00020,salt ,21/02/2025,21/02/2027
-rm00020,salt ,25 June 2025,25/06/2027
+rm00020,salt ,25-Jun-25,25/06/2027
 rm00020,salt ,6133,19/06/2028
 rm00034,Espray SD Guava 01.A.02.0062.SD,301024 110835,30/10/2026
 rm00036,Apple Flavour Espray 01.A.12.0137.SD,120425 111913,12/04/2027
@@ -1326,7 +1326,7 @@ ssppmx,sunny stock powder premix chicken - 0726ufcb72615,0018636294,15/02/2026
 ssprl15g,sunny stock powder impressions,34821,
 ssprl15g,sunny stock powder impressions,39701,
 stigicsgr,icing sugar,100SZ,10/10/2026
-stigicsgr,icing sugar,16/03/25,16/03/2027
+stigicsgr,icing sugar,16/03/2025,16/03/2027
 stigicsgr,icing sugar,SZ099,09/10/2026
 stigicsgr,icing sugar,SZ100,10/10/2026
 stigvitpmx,vitamin premix univit 3202c,25D158,30/03/2026

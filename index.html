@@ -248,7 +248,8 @@
         let productsLoadedFromDB = false;
         
         // RM = Raw Materials Database (keyed by stockCode)
-        // Structure: { stockCode: { description, batches: { batchNumber: { expiryDate } } } }
+        // Structure: { stockCode: { description, batches: { batchNumber: { expiryDates: [date1, date2, ...] } } } }
+        // Multiple expiry dates are allowed per stock_code + batch_number combination
         let rawMaterialsDatabase = JSON.parse(localStorage.getItem('rawMaterialsDatabase') || '{}');
         let rmProductsLoadedFromDB = false;
 
@@ -315,6 +316,7 @@
                 
                 if (data && data.length > 0) {
                     // Convert array to object keyed by stock_code
+                    // Support multiple expiry dates per stock_code + batch_number
                     rawMaterialsDatabase = {};
                     data.forEach(product => {
                         const stockCode = product.stock_code || product.StockCode || product.stockcode;
@@ -330,9 +332,15 @@
                                 };
                             }
                             if (batchNumber) {
-                                rawMaterialsDatabase[stockCode].batches[batchNumber] = {
-                                    expiryDate: expiryDate
-                                };
+                                if (!rawMaterialsDatabase[stockCode].batches[batchNumber]) {
+                                    rawMaterialsDatabase[stockCode].batches[batchNumber] = {
+                                        expiryDates: []
+                                    };
+                                }
+                                // Add expiry date if not already in the array
+                                if (expiryDate && !rawMaterialsDatabase[stockCode].batches[batchNumber].expiryDates.includes(expiryDate)) {
+                                    rawMaterialsDatabase[stockCode].batches[batchNumber].expiryDates.push(expiryDate);
+                                }
                             }
                         }
                     });
@@ -384,15 +392,31 @@
         }
         
         // Add a new RM product to Supabase
+        // Allows multiple entries with same stock_code + batch_number but different expiry_date
         async function addRawMaterialToSupabase(stockCode, description, batchNumber, expiryDate) {
             if (!supabase) return false;
             try {
+                // First check if this exact combination already exists
+                const { data: existing } = await supabase
+                    .from('raw_materials')
+                    .select('id')
+                    .eq('stock_code', stockCode)
+                    .eq('batch_number', batchNumber || '')
+                    .eq('expiry_date', expiryDate || null)
+                    .maybeSingle();
+                
+                if (existing) {
+                    console.log('Raw material entry already exists');
+                    return true; // Already exists, no need to add
+                }
+                
+                // Insert new entry (allows multiple expiry dates for same stock_code + batch)
                 const { error } = await supabase
                     .from('raw_materials')
-                    .upsert({ 
+                    .insert({ 
                         stock_code: stockCode, 
                         description: description,
-                        batch_number: batchNumber,
+                        batch_number: batchNumber || null,
                         expiry_date: expiryDate || null
                     });
                 return !error;
@@ -544,6 +568,8 @@
                 this.showingRMProductDB = false;
                 this.showingSettings = false;
                 this.showingStartStockTake = false;
+                this.showingExpirySelection = false;
+                this.pendingScan = null;
                 this.currentTakeDate = new Date().toISOString().split('T')[0];
                 this.syncInterval = null;
                 this.activeStockTake = getActiveStockTake();
@@ -932,10 +958,27 @@
                     const rmInfo = rawMaterialsDatabase[foundStockCode] || rawMaterialsDatabase[foundStockCode.toUpperCase()];
                     const description = rmInfo?.description || 'Unknown Raw Material - Add to database';
                     
-                    // Check for expiry date if batch number is known
+                    // Check for expiry dates if batch number is known
                     let expiryDate = null;
+                    let availableExpiryDates = [];
+                    let needsExpiryConfirmation = false;
+                    
                     if (rmInfo && batchNumber && rmInfo.batches && rmInfo.batches[batchNumber]) {
-                        expiryDate = rmInfo.batches[batchNumber].expiryDate || null;
+                        const batchInfo = rmInfo.batches[batchNumber];
+                        // Support both old format (expiryDate) and new format (expiryDates array)
+                        if (batchInfo.expiryDates && Array.isArray(batchInfo.expiryDates)) {
+                            availableExpiryDates = batchInfo.expiryDates.filter(d => d != null);
+                            if (availableExpiryDates.length === 1) {
+                                expiryDate = availableExpiryDates[0];
+                            } else if (availableExpiryDates.length > 1) {
+                                // Multiple expiry dates - need confirmation
+                                needsExpiryConfirmation = true;
+                            }
+                        } else if (batchInfo.expiryDate) {
+                            // Old format - single expiry date
+                            expiryDate = batchInfo.expiryDate;
+                            availableExpiryDates = [expiryDate];
+                        }
                     }
                     
                     return {
@@ -947,6 +990,8 @@
                         casesOnPallet: 1, // Will be entered manually
                         description: description,
                         expiryDate: expiryDate,
+                        availableExpiryDates: availableExpiryDates,
+                        needsExpiryConfirmation: needsExpiryConfirmation,
                         isRawMaterial: true
                     };
                 }
@@ -1071,6 +1116,15 @@
                     alert(parsed.error);
                     return;
                 }
+                
+                // Check if expiry date confirmation is needed (multiple dates available)
+                if (parsed.needsExpiryConfirmation && parsed.availableExpiryDates && parsed.availableExpiryDates.length > 1) {
+                    // Show expiry date selection dialog
+                    this.pendingScan = parsed;
+                    this.showingExpirySelection = true;
+                    this.render();
+                    return;
+                }
 
                 // Check for duplicate
                 const duplicate = await this.checkDuplicate(parsed.batchNumber, parsed.palletNumber);
@@ -1184,6 +1238,54 @@
             cancelCaseEntry() {
                 this.currentScan = null;
                 this.showingCaseEntry = false;
+                this.render();
+            }
+            
+            async selectExpiryDate(expiryDate) {
+                if (!this.pendingScan) return;
+                
+                // Set the selected expiry date
+                this.pendingScan.expiryDate = expiryDate;
+                this.pendingScan.needsExpiryConfirmation = false;
+                
+                this.showingExpirySelection = false;
+                
+                // Continue with duplicate check and case entry
+                const parsed = this.pendingScan;
+                this.pendingScan = null;
+                
+                // Check for duplicate
+                const duplicate = await this.checkDuplicate(parsed.batchNumber, parsed.palletNumber);
+                
+                if (duplicate) {
+                    const timestamp = duplicate.scanned_at || duplicate.date + ' ' + duplicate.time;
+                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                    
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    
+                    const rescan = confirm(
+                        `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
+                        `Batch: ${parsed.batchNumber}\n` +
+                        `Pallet: ${parsed.palletNumber}\n\n` +
+                        `Previously scanned by: ${scannedByName}\n` +
+                        `at ${timestamp}\n\n` +
+                        `Do you want to rescan this pallet?`
+                    );
+                    
+                    if (!rescan) {
+                        this.render();
+                        return;
+                    }
+                }
+                
+                this.currentScan = parsed;
+                this.showingCaseEntry = true;
+                this.render();
+            }
+            
+            cancelExpirySelection() {
+                this.pendingScan = null;
+                this.showingExpirySelection = false;
                 this.render();
             }
 
@@ -1701,6 +1803,87 @@
                                 <div class="absolute bottom-20 left-0 right-0 text-center pointer-events-none">
                                     <div class="inline-block bg-black/60 backdrop-blur-md text-white px-6 py-2 rounded-full text-sm font-medium">
                                         Align QR code within frame
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Expiry Date Selection Screen
+                if (this.showingExpirySelection && this.pendingScan) {
+                    const scan = this.pendingScan;
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    app.innerHTML = `
+                        <div class="min-h-screen bg-slate-50 flex flex-col">
+                            <div class="flex-1 p-6 flex flex-col justify-center max-w-md mx-auto w-full">
+                                <div class="bg-white rounded-3xl shadow-xl shadow-slate-200 overflow-hidden">
+                                    <div class="bg-amber-500 p-6 text-white text-center">
+                                        <div class="flex items-center justify-center gap-2 mb-2">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                            </svg>
+                                            <span class="font-bold">CONFIRM EXPIRY DATE</span>
+                                        </div>
+                                        <h2 class="text-xl font-bold">Multiple Expiry Dates Found</h2>
+                                        <p class="text-amber-100 text-sm mt-1">Please select the correct expiry date for this item</p>
+                                    </div>
+                                    
+                                    <div class="p-6 space-y-4">
+                                        <!-- Product Info -->
+                                        <div class="text-center pb-4 border-b border-slate-100">
+                                            <div class="inline-block bg-amber-50 text-amber-700 px-3 py-1 rounded-full text-sm font-bold mb-2">
+                                                ${scan.stockCode}
+                                            </div>
+                                            <h3 class="text-lg font-medium text-slate-900 leading-tight mb-1">${scan.description}</h3>
+                                            <div class="text-sm text-slate-500">Batch: ${scan.batchNumber}</div>
+                                        </div>
+                                        
+                                        <!-- Expiry Date Options -->
+                                        <div class="space-y-2">
+                                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                                Select Expiry Date
+                                            </label>
+                                            ${scan.availableExpiryDates.map(expDate => {
+                                                const exp = new Date(expDate);
+                                                exp.setHours(0, 0, 0, 0);
+                                                const isExpired = exp <= today;
+                                                const displayDate = exp.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                                                
+                                                return `
+                                                    <button 
+                                                        onclick="app.selectExpiryDate('${expDate}')"
+                                                        class="w-full p-4 border-2 ${isExpired ? 'border-red-200 bg-red-50 hover:border-red-400' : 'border-slate-200 bg-white hover:border-amber-400 hover:bg-amber-50'} rounded-xl transition-all text-left flex items-center justify-between"
+                                                    >
+                                                        <div class="flex items-center gap-3">
+                                                            <div class="w-10 h-10 ${isExpired ? 'bg-red-100' : 'bg-amber-100'} rounded-full flex items-center justify-center">
+                                                                <svg class="w-5 h-5 ${isExpired ? 'text-red-600' : 'text-amber-600'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                                </svg>
+                                                            </div>
+                                                            <div>
+                                                                <div class="font-bold ${isExpired ? 'text-red-700' : 'text-slate-900'}">${displayDate}</div>
+                                                                ${isExpired ? '<div class="text-xs text-red-500 font-medium">⚠️ EXPIRED</div>' : ''}
+                                                            </div>
+                                                        </div>
+                                                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                        </svg>
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                        
+                                        <!-- Cancel Button -->
+                                        <button 
+                                            onclick="app.cancelExpirySelection()" 
+                                            class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-xl font-bold transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
                                     </div>
                                 </div>
                             </div>
