@@ -786,13 +786,29 @@
 
         async function saveSessionToSupabase(session) {
             if (!supabaseSessionsEnabled || !session) return true;
+            const payload = buildSupabaseSessionPayload(session);
+            const isDuplicateError = (err) => err?.code === '23505' || /duplicate key value/i.test(err?.message || '');
+
             try {
-                const payload = buildSupabaseSessionPayload(session);
                 const { error } = await supabase
                     .from('stock_takes')
                     .upsert(payload, { onConflict: 'id' });
-                if (error) throw error;
-                return true;
+                if (!error) {
+                    return true;
+                }
+
+                if (isDuplicateError(error)) {
+                    const { error: updateError } = await supabase
+                        .from('stock_takes')
+                        .update(payload)
+                        .eq('id', session.id);
+                    if (!updateError) {
+                        return true;
+                    }
+                    throw updateError;
+                }
+
+                throw error;
             } catch (err) {
                 console.error('Failed to save session to Supabase:', err);
                 await logClientEvent('session-save-failed', 'error', session?.id || null, {
@@ -940,7 +956,12 @@
                     p_payload: payload
                 });
             } catch (err) {
-                console.warn('log_event failed', err);
+                const unauthorized = err?.code === 'PGRST301' || err?.code === '401' || /Unauthorized/i.test(err?.message || '');
+                if (unauthorized) {
+                    console.debug('log_event skipped (unauthorized)');
+                } else {
+                    console.warn('log_event failed', err);
+                }
             }
         }
 
