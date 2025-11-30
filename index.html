@@ -589,17 +589,26 @@
             const sessions = getSessionsForDate(date, sessionType);
             return sessions.length + 1;
         };
-        const addSession = (date, session) => {
+        const addSession = async (date, session) => {
+            session.date = session.date || date;
             const allSessions = getSessionsForDate(date);
+            const existingIndex = allSessions.findIndex(s => s.id === session.id);
+            if (existingIndex >= 0) {
+                allSessions[existingIndex] = session;
+            } else {
             allSessions.push(session);
+            }
             saveSessionsForDate(date, allSessions);
+            await saveSessionToSupabase(session);
         };
-        const updateSession = (date, sessionId, updates) => {
+        const updateSession = async (date, sessionId, updates) => {
             const sessions = getSessionsForDate(date);
             const idx = sessions.findIndex(s => s.id === sessionId);
             if (idx >= 0) {
+                sessions[idx].date = sessions[idx].date || date;
                 sessions[idx] = { ...sessions[idx], ...updates };
                 saveSessionsForDate(date, sessions);
+                await saveSessionToSupabase(sessions[idx]);
             }
         };
         
@@ -610,10 +619,11 @@
         };
         
         // Add a device to an existing session
-        const joinSession = (date, sessionId, deviceId, userName) => {
+        const joinSession = async (date, sessionId, deviceId, userName) => {
             const sessions = getSessionsForDate(date);
             const idx = sessions.findIndex(s => s.id === sessionId);
             if (idx >= 0) {
+                sessions[idx].date = sessions[idx].date || date;
                 if (!sessions[idx].devices) {
                     sessions[idx].devices = [];
                 }
@@ -633,16 +643,18 @@
                     });
                 }
                 saveSessionsForDate(date, sessions);
+                await saveSessionToSupabase(sessions[idx]);
                 return sessions[idx];
             }
             return null;
         };
         
         // Mark a device as completed in a session
-        const markDeviceCompleted = (date, sessionId, deviceId) => {
+        const markDeviceCompleted = async (date, sessionId, deviceId) => {
             const sessions = getSessionsForDate(date);
             const idx = sessions.findIndex(s => s.id === sessionId);
             if (idx >= 0) {
+                sessions[idx].date = sessions[idx].date || date;
                 if (sessions[idx].devices) {
                     const device = sessions[idx].devices.find(d => d.deviceId === deviceId);
                     if (device) {
@@ -657,6 +669,7 @@
                     sessions[idx].completedAt = new Date().toISOString();
                 }
                 saveSessionsForDate(date, sessions);
+                await saveSessionToSupabase(sessions[idx]);
                 return sessions[idx];
             }
             return null;
@@ -684,22 +697,25 @@
             metadata: row.metadata || {}
         });
 
-        const buildSupabaseSessionPayload = (session) => ({
-            id: session.id,
-            session_type: session.sessionType,
-            session_number: session.sessionNumber,
-            take_date: session.date,
-            status: session.status || 'active',
-            started_by: session.startedBy,
-            started_at: session.startedAt,
-            completed_at: session.completedAt || null,
-            metadata: {
-                ...(session.metadata || {}),
-                devices: session.devices || [],
-                lastUpdatedBy: session.lastUpdatedBy || (session.devices?.find(d => d.deviceId === DEVICE_ID)?.userName || null),
-                lastUpdatedAt: new Date().toISOString()
-            }
-        });
+        const buildSupabaseSessionPayload = (session) => {
+            const fallbackDate = session.startedAt ? new Date(session.startedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+            return {
+                id: session.id,
+                session_type: session.sessionType,
+                session_number: session.sessionNumber,
+                take_date: session.date || fallbackDate,
+                status: session.status || 'active',
+                started_by: session.startedBy,
+                started_at: session.startedAt,
+                completed_at: session.completedAt || null,
+                metadata: {
+                    ...(session.metadata || {}),
+                    devices: session.devices || [],
+                    lastUpdatedBy: session.lastUpdatedBy || (session.devices?.find(d => d.deviceId === DEVICE_ID)?.userName || null),
+                    lastUpdatedAt: new Date().toISOString()
+                }
+            };
+        };
 
         async function syncSessionsFromSupabase(date) {
             if (!supabaseSessionsEnabled || !date) return;
@@ -755,6 +771,7 @@
                 this.syncInterval = null;
                 this.activeStockTake = getActiveStockTake();
                 this.sessionSettings = getSessionSettings();
+                this.lastSessionSync = 0;
                 
                 this.init();
             }
@@ -785,9 +802,20 @@
                 }
             }
 
+            async refreshSessionsFromSupabase(force = false) {
+                if (!supabaseSessionsEnabled) return;
+                const now = Date.now();
+                if (!force && this.lastSessionSync && (now - this.lastSessionSync) < 5000) {
+                    return;
+                }
+                await syncSessionsFromSupabase(this.currentTakeDate);
+                this.lastSessionSync = Date.now();
+            }
+
             async init() {
                 // Try to initialize database
                 await db.init();
+                await this.refreshSessionsFromSupabase(true);
                 
                 // Load products from Supabase (for GitHub Pages deployment)
                 if (isGitHubPages || !isNetlify) {
@@ -822,13 +850,14 @@
                 this.render();
             }
 
-            startNewStockTake(userName, sessionType = 'FP') {
+            async startNewStockTake(userName, sessionType = 'FP') {
                 if (!userName || userName.trim() === '') {
                     alert('Please enter your name');
                     return;
                 }
                 
                 setUserName(userName.trim());
+                await this.refreshSessionsFromSupabase(true);
                 
                 // Get next session number for today (per type)
                 const sessionNumber = getNextSessionNumber(this.currentTakeDate, sessionType);
@@ -853,10 +882,11 @@
                 };
                 
                 // Save session to sessions list (with devices)
-                addSession(this.currentTakeDate, {
+                await addSession(this.currentTakeDate, {
                     id: sessionId,
                     sessionNumber: sessionNumber,
                     sessionType: sessionType,
+                    date: this.currentTakeDate,
                     startedBy: userName.trim(),
                     startedAt: new Date().toISOString(),
                     devices: [deviceInfo],
@@ -873,7 +903,7 @@
                 this.selectedStockTakeType = null;
                 
                 if (this.useNeonDB) {
-                    this.ensureStockTake();
+                    await this.ensureStockTake();
                     this.startAutoSync();
                 }
                 
@@ -881,16 +911,17 @@
                 this.render();
             }
             
-            joinExistingSession(sessionId, userName) {
+            async joinExistingSession(sessionId, userName) {
                 if (!userName || userName.trim() === '') {
                     alert('Please enter your name');
                     return;
                 }
                 
                 setUserName(userName.trim());
+                await this.refreshSessionsFromSupabase();
                 
                 // Join the session
-                const updatedSession = joinSession(this.currentTakeDate, sessionId, DEVICE_ID, userName.trim());
+                const updatedSession = await joinSession(this.currentTakeDate, sessionId, DEVICE_ID, userName.trim());
                 
                 if (!updatedSession) {
                     alert('Session not found');
@@ -915,7 +946,7 @@
                 this.selectedStockTakeType = null;
                 
                 if (this.useNeonDB) {
-                    this.ensureStockTake();
+                    await this.ensureStockTake();
                     this.startAutoSync();
                 }
                 
@@ -932,7 +963,7 @@
                     
                     // Mark device as completed in session
                     if (sessionId) {
-                        const updatedSession = markDeviceCompleted(sessionDate, sessionId, DEVICE_ID);
+                        const updatedSession = await markDeviceCompleted(sessionDate, sessionId, DEVICE_ID);
                         if (updatedSession && updatedSession.status === 'completed') {
                             alert('Session complete! All devices have finished.');
                         }
@@ -981,7 +1012,7 @@
                 
                 // Mark this device as completed
                 if (sessionId) {
-                    const updatedSession = markDeviceCompleted(sessionDate, sessionId, DEVICE_ID);
+                    const updatedSession = await markDeviceCompleted(sessionDate, sessionId, DEVICE_ID);
                     if (updatedSession && updatedSession.status === 'completed') {
                         alert('🎉 Session Complete!\n\nAll devices have finished their stock take.');
                     } else if (updatedSession) {
@@ -2121,6 +2152,9 @@
                 const app = document.getElementById('app');
                 if (this.isScanning && document.getElementById('scanner-view')) {
                     return;
+                }
+                if (this.showingStartStockTake) {
+                    this.refreshSessionsFromSupabase();
                 }
                 
                 // Start Stock Take Screen - Step 1: Type Selection
