@@ -410,24 +410,27 @@
         }
         
         // Live duplicate check against Supabase - checks ALL devices in the session
-        async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, stockCode, expiryDate = null) {
+        async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, stockCode, expiryDate = null, palletNumber = null) {
             if (!supabase || !sessionId) return null;
             
             try {
-                const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
-                
-                // Build query based on session type
+                // All scans are in stock_scans table
                 let query = supabase
-                    .from(tableName)
+                    .from('stock_scans')
                     .select('*')
                     .eq('session_id', sessionId)
                     .eq('batch_number', batchNumber);
                 
-                // For RM, also check stock_code and optionally expiry_date
+                // For RM, check stock_code and optionally expiry_date
                 if (sessionType === 'RM') {
                     query = query.eq('stock_code', stockCode);
                     if (expiryDate) {
                         query = query.eq('expiry_date', expiryDate);
+                    }
+                } else {
+                    // For FP, check pallet_number
+                    if (palletNumber) {
+                        query = query.eq('pallet_number', palletNumber);
                     }
                 }
                 
@@ -968,15 +971,13 @@
                             unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
                         }));
                 } else if (this.isGitHubPages && supabase && sessionId) {
-                    // Load from Supabase for live data across all devices
+                    // Load ALL scans from stock_scans table, filtered by session
                     try {
-                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
-                        
                         const { data, error } = await supabase
-                            .from(tableName)
+                            .from('stock_scans')
                             .select('*')
                             .eq('session_id', sessionId)
-                            .order('created_at', { ascending: false });
+                            .order('scanned_at', { ascending: false });
                         
                         if (error) {
                             console.error('Error loading scans from Supabase:', error);
@@ -986,25 +987,26 @@
                         
                         this.scans = (data || []).map(row => ({
                             id: row.id,
-                            timestamp: new Date(row.created_at).getTime(),
-                            date: new Date(row.created_at).toLocaleDateString(),
-                            time: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            timestamp: new Date(row.scanned_at).getTime(),
+                            date: new Date(row.scanned_at).toLocaleDateString(),
+                            time: new Date(row.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            raw: row.raw_code,
                             batchNumber: row.batch_number,
                             palletNumber: row.pallet_number || '',
-                            casesOnPallet: 0,
-                            actualCases: sessionType === 'RM' ? row.quantity : row.cases,
+                            casesOnPallet: row.cases_on_pallet || 0,
+                            actualCases: row.actual_cases,
                             stockCode: row.stock_code,
                             description: row.description,
                             valid: true,
                             deviceId: row.device_id,
                             scannedBy: row.scanned_by || 'Unknown',
-                            sessionType: sessionType,
+                            sessionType: row.session_type || sessionType,
                             expiryDate: row.expiry_date,
                             location: row.location,
                             unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
                         }));
                         
-                        console.log(`Loaded ${this.scans.length} scans from Supabase for session ${sessionId}`);
+                        console.log(`Loaded ${this.scans.length} scans from stock_scans for session ${sessionId}`);
                     } catch (err) {
                         console.error('Failed to load scans from Supabase:', err);
                         this.scans = [];
@@ -1194,14 +1196,15 @@
                 if (this.useNeonDB) {
                     return await db.checkDuplicate(this.currentTakeDate, batchNumber, palletNumber);
                 } else if (this.isGitHubPages && this.activeStockTake?.id) {
-                    // Live check against Supabase for all devices in this session
+                    // Live check against Supabase stock_scans for all devices in this session
                     const sessionType = this.activeStockTake?.sessionType || 'FP';
                     return await checkDuplicateInSupabase(
                         this.activeStockTake.id,
                         sessionType,
                         batchNumber,
                         stockCode,
-                        expiryDate
+                        expiryDate,
+                        palletNumber
                     );
                 } else {
                     // Fallback to local check
@@ -1397,31 +1400,28 @@
                     });
                     console.log('Insert result:', result);
                 } else if (this.isGitHubPages && supabase && sessionId) {
-                    // Save directly to Supabase for live data
+                    // Save ALL scans to stock_scans table
                     try {
-                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
-                        
                         const record = {
                             session_id: sessionId,
+                            take_date: this.currentTakeDate,
                             batch_number: parsedData.batchNumber,
                             stock_code: parsedData.stockCode,
                             description: parsedData.description,
                             scanned_by: userName,
                             device_id: DEVICE_ID,
+                            session_type: sessionType,
                             location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
-                            unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
+                            unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases'),
+                            actual_cases: actualCases,
+                            pallet_number: parsedData.palletNumber || null,
+                            cases_on_pallet: parsedData.casesOnPallet || null,
+                            expiry_date: parsedData.expiryDate || null,
+                            raw_code: parsedData.raw
                         };
                         
-                        if (sessionType === 'RM') {
-                            record.quantity = actualCases;
-                            record.expiry_date = parsedData.expiryDate || null;
-                        } else {
-                            record.cases = actualCases;
-                            record.pallet_number = parsedData.palletNumber;
-                        }
-                        
                         const { data, error } = await supabase
-                            .from(tableName)
+                            .from('stock_scans')
                             .insert([record])
                             .select();
                         
@@ -1430,7 +1430,7 @@
                             throw error;
                         }
                         
-                        console.log('Saved to Supabase:', data);
+                        console.log('Saved to Supabase stock_scans:', data);
                     } catch (err) {
                         console.error('Failed to save to Supabase:', err);
                         alert('Failed to save scan to database. Please check your connection.');
@@ -1470,17 +1470,13 @@
             }
 
             async deleteScan(id) {
-                const sessionType = this.activeStockTake?.sessionType || 'FP';
-                
                 if (this.useNeonDB) {
                     await db.deleteStockScan(id);
                 } else if (this.isGitHubPages && supabase) {
-                    // Delete from Supabase
+                    // Delete from stock_scans table
                     try {
-                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
-                        
                         const { error } = await supabase
-                            .from(tableName)
+                            .from('stock_scans')
                             .delete()
                             .eq('id', id);
                         
@@ -1489,7 +1485,7 @@
                             throw error;
                         }
                         
-                        console.log('Deleted from Supabase:', id);
+                        console.log('Deleted from stock_scans:', id);
                     } catch (err) {
                         console.error('Failed to delete from Supabase:', err);
                         alert('Failed to delete scan from database.');
@@ -1683,17 +1679,14 @@
                 
                 this.selectedHistorySession = session;
                 
-                // Load scans from Supabase
+                // Load scans from Supabase stock_scans table
                 if (this.isGitHubPages) {
                     try {
-                        // Query based on session type
-                        const tableName = session.sessionType === 'RM' ? 'raw_materials' : 'products';
-                        
                         const { data, error } = await supabase
-                            .from(tableName)
+                            .from('stock_scans')
                             .select('*')
                             .eq('session_id', sessionId)
-                            .order('created_at', { ascending: true });
+                            .order('scanned_at', { ascending: true });
                         
                         if (error) throw error;
                         
@@ -1702,12 +1695,12 @@
                             batchNumber: item.batch_number,
                             stockCode: item.stock_code,
                             description: item.description,
-                            cases: session.sessionType === 'RM' ? item.quantity : item.cases,
+                            cases: item.actual_cases,
                             palletNumber: item.pallet_number,
                             location: item.location,
                             expiryDate: item.expiry_date,
                             unitType: item.unit_type || (session.sessionType === 'RM' ? 'kg' : 'cases'),
-                            timestamp: item.created_at,
+                            timestamp: item.scanned_at,
                             scannedBy: item.scanned_by
                         }));
                     } catch (error) {
