@@ -1,0 +1,412 @@
+﻿type,stock_code,description
+bags,bulkbag25kg,bulk foil bags 25kg
+bags,cbbg10kg,cowbell 10kg bag
+bags,cbbg12.5kg,cowbell 12.5kg bag
+bags,cbbg5kg10%b9,cowbell 5kg bag french/eng 10%b9 cff367
+bags,ly5kgdrc,loya forvita 5kg bag - drc
+bags,lybg12.5kg,loya 12.5kg bag
+bags,lybg5kg,loya forvita 5kg bag portugese
+bags,lybg5kginst,loya forvita 5kg bag fpea
+bags,mkbg12.5kg,miksi 12.5kg bag
+bags,mkbg5kginst,miksi 5kgbag french/eng
+bags,"mlkbg12,5kg","milki 12,5kg bag"
+bags,mxbag5kgdrc,mixwell 5kg bag 19% drc
+bags,mxbg12.5kg,mixwell 12.5kg bag
+bags,ogctomstkbag,onga tomate stick clear plastic bag (225x300x80mic)
+bags,ogorgbag,700x1100x65 mic orange bags
+bags,plasticbag4g,plastic liner bag for 4g cubes 600x500x50mic
+buckets,ogcbuc4g,yellow rectangular bucket
+buckets,ogcbuclid4g,yellow rectangular lid
+buckets,ogctub4g,onga 10lt yellow kwikloc tub
+buckets,ogctublid4g,onga 10lt yellow lid
+canister labels,pw00694,jaba shaker cap red
+canisters,pw00687,jaba shaker bottle
+cans,cbcn1800gfe,1800g cowbell french/eng (maldap-0085)
+cans,cbcn1800gtri10%b9,cowbell can 1800g tri language 10%b9 (cff358)malda-0096
+cans,cbcn2500tri10%b9216m,cowbell can 2500g tri language 10%b9 (cv185)216mm
+cans,cbcn250gfe10%b9,cowbell can 250g 10% b9 french/eng  cff357
+cans,cbcn250gp,250g cowbell portuguese (maldap-0077)
+cans,cbcn400gfe10%B9,cowbell can 400g french english 10%b9 (cff360)malda-0094
+cans,cbcn400gp,400g cowbell portuguese (maldap-0075)
+cans,cbcn900gp,900g cowbell portuguese (maldap-0076)
+cans,cbcn900gtr10%b9,cowbell can 900g tri language 10% b9(cff361)malda-0095
+cans,lycn1800g_ss,loya 1800g ss can tri language (maldap-0090)
+cans,mxcn2500g10%,2500g mixwell french 10%
+cans,mxcn400g10%,400g mixwell french 10% (maldap-0083)
+cans,mxcn900g10%,900g mixwell french 10% (maldap-0082)
+corro labels,ogcrlblbeef,corro label boeuf (beef)
+corro labels,ogcrlblchick,corro label poulet (chicken)
+corro labels,ogcrlblpndukiz,corro label pondu kizaka
+corros,amcr4x15,amila 4x15 outer carton port
+corros,baseinsert,base inserts
+corros,cbcr120/150tri,cowbell corro120/150 tri - 447x255x124(cff377)
+corros,cbcr150x11/16gvitd,cowbell 150x(80*120) french drc (1177)
+corros,cbcr150x28gchoce,ccm 150x (160*120) 28g eng (eur186692)
+corros,cbcr1800gtri,cowbell corro 6x1800g tri language (cff373)
+corros,cbcr200gx24e,cowbell corro 200gx24 english 359 x 262 x 169mm (cff379)
+corros,cbcr24x400ge,cowbell 24x400g eng (eur186686)
+corros,cbcr2500tl,cowbell corro 6x2500g tri language (cff374)
+corros,cbcr2500trilg,cowbell corro 6x2500g tri language (ccv224)
+corros,cbcr250gfe,cowbell corro 250g french/eng cff369
+corros,cbcr300tri,cowbell corro 300 french 398x228x164 (cff380)
+corros,cbcr300x(80*120),cowbell 300x(80*120) french (cff/978)
+corros,cbcr300x21ge,cowbell 300x(80*120) eng (eur186690)
+corros,cbcr400gtri,cowbell corro 24x400g tri language (cff370)
+corros,cbcr500gchce,ccm 10x500g english (eur186696)
+corros,cbcr6x900tri,cowbell corro 6x900g tri language (cff372)
+corros,cbcr900gtri,cowbell 12x900 tri-language (cff371)
+corros,cbpcr10x380gtri,cowbell pouch corro 10x380g pouches tri language (cff375)
+corros,cbpcr12x400gtri,cowbell pouch corro 12x400g pouches tri language (cff376)
+corros,ccmcr28g150tri,cowbell choc 28gx150 corro (ccm246)
+corros,cffcr300x12gf,cowbell 300 x 12g french (cff/588)
+corros,lycn15gx120,loya corro 15gx120
+corros,lycr1800_ss,loya 1800g ss corro tri language
+corros,lyscr18g120f,loya forvita 18g120 – semi skimmed
+corros,miksicr150x10g,miksi 150x(80*120) french (eur187785)
+corros,miksicr500x12g,miksi 500gx12 (mff272)(168x400x230)
+corros,mxcr150x(80*120)congo,mixwell 150x(80*120) mix/109
+corros,mxcr2500gcan,2500g mixwell cans boxes (1272)
+corros,mxcr400g,mixwell 10x400g (eur186684)
+corros,mxcr400gcan,400g mixwell cans boxes (1273)
+corros,mxcr900gcan,900g mixwell cans boxes (1274)
+corros,ogccr4gbeef,onga cube beef 4g (1260)
+corros,ogccr4gchick,onga cube chicken 4g (1261)
+corros,ogcrbrwn,onga 5g kraft (1276)
+corros,ogctomstkcora,onga tomate stick corros 200 (237x162x154)
+corros,ogctomstkcord,onga tomate stick corros 360 (392x242x120)
+corros,ogtcr10gbeef12x48,onga tablet  beef carne 12x48x10g corro
+corros,ogtcr10gbeef24x48,onga tablet  beef 24x48x10g corro
+corros,ogtcr10gcrevette12x48,onga tablet  crevette/camarao 12x48x10g corro
+corros,ogtcr10gcrevette24x48,onga tablet  crevette/camarao 24x48x10g corro
+corros,ogtcr10gmarin12x48,onga tablet  marinade/tempero 12x48x10g corro
+corros,ogtcr10gmarin24x48,onga tablet  marinade/tempero 24x48x10g corro
+corros,ogtcr10gpondu12x48,onga tablet  pondu kizaka 12x48x10g corro
+corros,ogtcr10gpondu24x48,onga tablet  pondu 24x48x10g corro
+corros,ogtcr10gpoulet12x48,onga tablet  poulet/galinha 12x48x10g corro
+corros,ogtcr10gpoulet24x48,onga tablet  poulet/galinha 24x48x10g corro
+corros,ogtcr10gtomato12x48,onga tablet tomato refogado 12x48x10g corro
+corros,ogtcr10gtomato24x48,onga tablet  tomato 24x48x10g corro
+corros,pw00037,dop 8x72x5g corro gap box
+corros,pw00066,jaba chicken  corro
+corros,pw00364,corro dop 36's ea
+corros,pw00536,dop corro 2g 297x146x80
+corros,pw00628,superdip 2g corro
+corros,pw00644,corro jaba curry
+corros,pw00649,bestcook corro
+corros,pw00732,amila ice tea corro 25g
+corros,pw602,jaba chicken tablet corros
+corros,pw603,jaba beef tablet corros
+corros,sspcr15g,sunny stock powder corro
+displays,amdc4x15x25g,amila generic display carton 4x15x25g
+displays,pdr1146,display - jaba chicken seasoning 10
+displays,pw00005,display - jaba chicken seasoning
+displays,pw00014,display dop reds 36s 16x36x5g
+displays,pw00164,display dop reds 8x72x5g
+displays,pw00169,display dop rainbow 72s 5g
+displays,pw00639,display jaba beef
+displays,pw00645,display jaba curry
+displays,pw00646,dop 36x8x5g display carton
+displays,pw006504,bestcook chicken display
+displays,pw00652,bestcook beef display
+displays,pw00741,amila display ice tea
+displays,sspdsp15g,sunny stock powder display
+grids,pw00688,jaba shaker grid 52mm
+ingredients,amigaces,acesulfame - k
+ingredients,amigapplfav,flavour apple 052682
+ingredients,amigasco,ascorbic acid
+ingredients,amigaspa,aspartame
+ingredients,amigbanaflav,banana flavour
+ingredients,amigblaccc,blackcurrant colour c723/tf
+ingredients,amigblacflav,blackcurrant flavour
+ingredients,amigblan,univisco blanose 1087
+ingredients,amigblatea,black tea extract
+ingredients,amigblateaflav,black tea flavour 592023 tp0904
+ingredients,amigbrown,brown th c622/s colour
+ingredients,amigcaram,caramel colour powder 606
+ingredients,amigcarm,carmoisine c069/s
+ingredients,amigcloud,espray sd cloud - 07032008039sd
+ingredients,amigdext,dextrose
+ingredients,amiggrandflav,granadilla flavour 01.01.0035.sd
+ingredients,amiglemflav,lemon flavour 051421
+ingredients,amiglemlimflav,lemon & lime flavour 01.01.0015.sd
+ingredients,amigmangflav_1,sonaflo mango alphonso - 060521
+ingredients,amigmangflav_2,mango flavor espray 01.a.02.0085.sd
+ingredients,amignaarflav,naartjie flavour
+ingredients,amigoranflav3,orange espray flavour - 07.03.2008013sd
+ingredients,amigoranflav4,orange flavour - dop 01.0071.sd
+ingredients,amigpassflav,passion fruit flavour
+ingredients,amigpeacflav,peach flavour
+ingredients,amigpineflav,pineapple flavour pr-754-041-1
+ingredients,amigquin,quinolene yellow c089/s
+ingredients,amigrasbflav,raspberry flavour - dop 01.0032.sd
+ingredients,amigrooiteaext,rooibos tea extract rxco1a5
+ingredients,amigstraflav,strawberry flavour amila 01.02.0029.sd
+ingredients,amigtric,tricalcium phosphate
+ingredients,amigtris,trisodium citrate
+ingredients,amigtropflav,tropical flavour 508328 ap1104
+ingredients,amigvitpre_2,"vitamin premix a,b1,b2"
+ingredients,amigvitprem,univit 5206a
+ingredients,amigxant,xanthan gum 80
+ingredients,cbigccpwd,coco powder rr5011
+ingredients,cbigchcpwd1,sc515152 chocolate flavour
+ingredients,ddwcara050,liquid caramel colour ddw050
+ingredients,msg40-80,msg 40-80 mesh
+ingredients,ogcbfflaviff,mix of odiferous beef sc315157
+ingredients,ogcchkflaviff,mix of odiferous chicken sc315787
+ingredients,ogcchlpwdr,birds eye chilli powder
+ingredients,ogccrml,caramel powder
+ingredients,ogccrnstch,cornstarch
+ingredients,ogcctrcacd,citric acid anhydrous 50-120
+ingredients,ogcgarlic,garlic powder
+ingredients,ogci+g,i+g
+ingredients,ogclkalred,lake allura red
+ingredients,ogcmaltdex,maltodextrine de18-20
+ingredients,ogcmarhart,marinade hrt cs za-2294 pwd 25kg 20622294/001
+ingredients,ogcmsg,msg 60-120
+ingredients,ogconion,onion powder
+ingredients,ogcpaprka,paprika oleoresin 60000cu
+ingredients,ogcpondu1,pondu premix 20588278
+ingredients,ogcsalt,iodised salt fine
+ingredients,ogcshpht,onga shrimp tablet hart 430-10-21
+ingredients,ogcsoylec,soy lecithin (ultralec p)
+ingredients,ogcsugar,refined white sugar
+ingredients,ogcsunyel,sunset yellow
+ingredients,ogctom,tomato flavour (sc1024976)
+ingredients,ogctomhart,tomate hart (20544279/001)
+ingredients,ogctumerc,bombay turmeric irr
+ingredients,ogcvegfat,vegetable fat
+ingredients,ogcwater,water
+ingredients,ogdwcakeflwr,dried wheat cake flour
+ingredients,ogghartpndu,pondu heart powder 20493405
+ingredients,oggheartpwd,stew heart powder sc437288
+ingredients,oggmaizflour,maize flour (iwisa super cream)
+ingredients,oggmaizstrch,maize starch ah1 fully gelatinized fines
+ingredients,oggmfil-p,mfil-p precipitated silica
+ingredients,oggparslvs,parsley leaves 3-5mm
+ingredients,oggponceau4r,ponceau 4r c008/s
+ingredients,oggponceaulake4r,ponceau lake 4r c411/l/s
+ingredients,oggsaltmed,iodized salt medium
+ingredients,ogmmbrnsug,brown sugar
+ingredients,ogmmparslvs,parsely leaves 1mm
+ingredients,ogmmturmor,turmeric or
+ingredients,ogmmvegoil,palm oil
+ingredients,ogsipernate22s,"sipernate 22s (15,00kg)"
+ingredients,rm00001,cyclamate
+ingredients,rm00004,citric acid local
+ingredients,rm00006,saccharin bp450
+ingredients,rm00008,pirosil/mansil-sunsil
+ingredients,rm00010,cola brown
+ingredients,rm00011,sugar white
+ingredients,rm00020,salt
+ingredients,rm00039,green colour (cream soda 2154)
+ingredients,rm00049,grape colour c749
+ingredients,rm00052,blackcurrant colour c723/tf
+ingredients,rm00062,sunset yellow psu0933
+ingredients,rm00066,flavour creamsoda - dop 01.02.0006.sd
+ingredients,rm00067,grape flavour - dop 01.03.0045.sd
+ingredients,rm00069,jaba combo chn stock
+ingredients,rm00078,pinenut yellow c416/tf
+ingredients,rm00079,flavour cherry - dop 01.05.0005.sd
+ingredients,rm00086,caramel 606
+ingredients,rm00090,lemonade flavour 01.a.07.0098.sd
+ingredients,rm00148,monosodium glutamate
+ingredients,rm00149,ribotide
+ingredients,rm00150,yellow maize starch
+ingredients,rm00156,onion powder
+ingredients,rm00167,cola flavour dop 01.a.34.0013.sd
+ingredients,rm00168,pineapple flv 01.0033.sd
+ingredients,rm00230,chocolate brown lake c661/l/s
+ingredients,rm00231,tartrazine lake c681/l/s
+ingredients,rm00239,flavour dop 10g s/berry strawberry 07.03.2008048
+ingredients,rm00284,grilled beef flavour jaba
+ingredients,rm00285,flavour jaba curry
+ingredients,RM00290,magnasweet mm100f
+ingredients,rm00295,beef flavour (ibza) 62l20880
+ingredients,rm00296,paprika 17.0376
+ingredients,rm00297,turmeric 17.0446
+ingredients,rm00298,capsicum
+ingredients,rm00300,original chicken flavour
+ingredients,rm00301,natural vegetables
+ingredients,rm00302,chilli mix powder
+ingredients,rm00310,yeast extract
+ingredients,rm00311,umami bodygiver 581385 5cbza
+ingredients,rm00315,passion fruit cj0027
+ingredients,ssppirosil,sunny stock powder pirosil
+ingredients,ssppmx,sunny stock powder premix chicken - 0726ufcb72615
+ingredients,stigicsgr,icing sugar
+ingredients,stigvitpmx,vitamin premix univit 3202c
+ingredients,swewhypwd,sweet whey powder-tolnatej spec
+ingredients,twvanflv,vanilla flavour sc515851
+ingredients,twvit,univit 5218
+ink,con001,ink 1072k (0.5l) - export angola
+ink,con001_a,ink 1072k (0.5l) local
+ink,con001d,ink 1072k(1l) - export drc
+label,pmlabtwg400,label twisco 400g
+label,tzcnlab,swahili label for tanzania
+labels,pw00147,blank labels
+labels,pw00189,label dop white (rainbow) 72s 150x30 5g
+labels,pw00193,reds case label
+labels,pw00665,jaba original label
+labels,pw00666,jaba chilli label
+machines,drc13022501,"induction sealing machine for cap diameter 20mm to 120mm - 850w,single phase"
+machines,drcm260624,case taping machine xt553rl
+machines,pfs0810242,incline discharge slat conveyor
+machines,pml27022501,"toyota 8fbe18 1,8ton electric forklift"
+machines,pml27022502,"toyota/bt rre250 2,5ton reach truck"
+machines,pml27022503,micron mhe camera system
+mascot,drc09122401,"cowbell mascot, with cooling system"
+mek,con003,mek cleaning solvent 2080m -export angola
+mek,con003d,mek cleaning solvent 2080m export - drc
+milk powder,ffmp10%b9,fat filled milk powder 10% b9 40000157
+milk powder,ffmp16%,fat filled milk powder 16% - 40000102
+milk powder,mxigmlkpwd,mixwell - ffmp19p ins ve 25kg mix bag 806057
+packaging,glue,glue chips
+packaging,mek,mek cleaning solvent 2080m
+packaging,palwrap,clear pallet wrap 17mic
+packaging,palwrap1,clear pallet wrap 23mic
+packaging,solvent,make up solvent e-18
+packaging,strap001,strapping16x0.8x1200
+packaging,tape3,clear packing tape (100m per roll)
+packaging,tape4,clear packing tape (1000m per roll)
+pallet,ogtabpallet,onga tablet 1140x1140 pallet closed top
+pallet,ogtabplysheet_18,onga tablet ply wood top sheet 18mm
+pallet,pal002,pallet mp small 1200x1120
+pallet,pal005,pallet ec
+pallet,pal006,pallet ne
+pallet,pal007,pallet tdp
+pallet,pal008,pallet mp big 1420x1120
+pallet,pal009,pallet cs
+pallet,pal010,pallet ge
+plastic caps,cbpc127mmwht3d,127mm cowbell white plastic lids 3d
+plastic caps,cbpc153mmwht,153mm cowbell white plastic lids f/p (4153-c-w81)
+plastic caps,cbpc189mmwht,189mm cowbell white plastic lids f/p (4189-c-w81)
+plastic caps,cbpc99mmwht3d,99mm cowbell white plastic lids 3d
+plastic caps,lypc153mmylw,153mm loya yellow plastic lids (4153-l-y17)
+plastic caps,mxpc127mmwht,127mm white plastic lids unembossed
+plastic caps,mxpc189mmwht,189mm mixwell white plastic lids
+plastic caps,mxpc99mmwht,99mm white plastic lids unembossed
+plastic caps,pw00689,jaba shaker cap green
+pouch,ogcpouch4gbeef,onga cube pouch 4g beef
+pouch,ogcpouch4gchick,onga cube pouch 4g chicken
+pouch,ogcpouch4gtom,onga cube pouch 4g tomate
+reels,amrlfrucoc15*25,amila 25g fruit cocktail
+reels,amrlmanapp15*25,amila 25g mango apricot
+reels,amrlmixber15*25,amila 25g mixed berry
+reels,amrloran15*25,amila 25g orange
+reels,amrlorannaa15*25,amila 25g orange naartji
+reels,amrlpass15*25,amila 25g passion fruit
+reels,amrlstrban15*25,amila 25g strawberry banana
+reels,cbrl304x225e,cowbell reels 304x225 200g english (cff364)
+reels,cbrl365x260fe,cowbell reels (380g) 365x260 french/english (cff365)
+reels,cbrl500gchce,ccm 500g pouch english
+reels,cbrl5g600*80e,cowbell (600*80) english (08392)
+reels,cbrl814*120e,cowbell (814*120) english 20%
+reels,cbrl814x120e10%,cowbell reels 814x120 english bopp 10% (cff366)
+reels,cbrl814x120f10%,cowbell reels 814x120 bopp 10% french (cff362)
+reels,cbrl914x130f10%,cowbell reels 914x130 bopp10% french (cff363)
+reels,ccmrl28g150,ccm (80*120) english ccm237
+reels,lyrl400g12ppfe,loya forvita 400g pp f/e
+reels,lyrl80*120fe,loya forvita (80*120) f/e
+reels,lyrl814x12016%,loya reels  160*120 foil 16% lfv382
+reels,lysrl200*105,lysrl200*105fe– semi skimmed
+reels,miksi15g5l,miksi(814*120) french
+reels,miksi500g1l,miksi english 345mmx260mm 10µm pet/6.35µm al.foil/80µm pe
+reels,mxrl15g5l_bp,mixwell 814*120 french 10% bopp
+reels,mxrl400g,mixwell 400g pp 10%
+reels,ogcrl4gbeef,onga cube wrapper 4g beef
+reels,ogcrl4gchick,onga cube wrapper 4g chicken
+reels,ogcrl4gtom,onga cube wrapper 4g tomate
+reels,ogctomstkimp,onga tomate stick pack impressions (164*125)
+reels,ogrlbeefang,onga beef portuguese
+reels,ogrlchickang,onga chicken portuguese
+reels,ogrlpnduang,onga kizaka/pondu portuguese
+reels,ogrlstewang,onga stew portuguese
+reels,ogtrl10gbeef,onga tablet wrapper 10g tablet/tablette ont/206
+reels,ogtrl10gbeefcarne,onga tablet wrapper 10g beef/carne ont/207
+reels,ogtrl10gcrevcama,onga tablet wrapper 10g crevette/camarao ont/210
+reels,ogtrl10gmaritemp,onga tablet wrapper 10g marinade/tempero ont/209
+reels,ogtrl10gpondu,onga tablet wrapper 10g pondu  ont/204
+reels,ogtrl10gpondukiza,onga tablet wrapper 10g pondu/kizaka ont/205
+reels,ogtrl10gpoulgali,onga tablet wrapper 10g poulet/galinha ont/208
+reels,ogtrl10gtomarefo,onga tablet wrapper 10g tomate/refogado ont/211
+reels,ogtrl12gbeefpa,onga tablet wrapper 12g beef(portuguese)
+reels,ogtrl12gchick,onga tablet wrapper 12g chicken
+reels,ogtrl12gcrev,onga tablet wrapper 12g crevette
+reels,ogtrl12gmarin,onga tablet wrapper 12g marinade
+reels,ogtrl12gpondu,onga tablet wrapper 12g pondu green
+reels,ogtrl12gtom,onga tablet wrapper 12g tomate
+reels,pw00182,paper dop reds
+reels,pw00243,dop rainbow 72 reel 5g
+reels,pw00270,paper - jaba chicken 396 944
+reels,pw00528,dop orange reel tan 2g
+reels,pw00529,dop mango reel tan 2g
+reels,pw00530,dop blackcurrant reel tan 2g
+reels,pw00624,superdip malawi orange reels 2g
+reels,pw00637,paper jaba beef
+reels,pw00643,jaba curry paper
+reels,pw00647,best cook chicken reel
+reels,pw00648,best cook beef reel
+reels,pw00735,amila 25g peach ice tea
+reels,pw00737,amila 25g lemon ice tea
+reels,pw00738,amila 25g rasberry ice tea
+reels,pw00739,amila 25g rooibos ice tea
+reels,pw00740,amila 25g apple ice tea
+reels,pw600,jaba chicken 12g tablet wrapper
+reels,pw601,jaba beef 12g tablet wrapper
+reels,ssprl15g,sunny stock powder impressions
+seal,con022,box of seals
+service,pml03032501,repaired printer as quote scq27965
+service,pml03032502,repaired printer as per quote scq27964
+services,pml19022502,"racking upgrades to inbound,rebate and outbound areas as per quote dated 19/02/25"
+services,pml19022503,"replacement beams for inbound, rebate and outbound"
+shrink wrap,ogtfilm170mm,170mm 20um clear bopp
+shrink wrap,pw00142,shrink wrap 350x40
+shrink wrap,rm00286,jaba shrink wrap
+solvent,con002,make up solvent e-18 - export angola
+solvent,con002d,make up solvent  th18 export drc
+solvent,con004l,s1018 cleaning solvent
+spare parts,ang21012505,2ply  pvc white 6pc 3551 x500xsl-02
+spare parts,ang21012506,5th 30mtr roll
+spare parts,ang21012507,drawdown 240 l100 6mm linatex
+spare parts,pml170225,5 to 6 lane modification as per quote - #s0000770
+spares,ang210923-4,various bearings
+spares,drc07112401,nozzle orifice
+spares,drc07112403,1072k black ink-500ml
+spares,drc13022503,56mm dia / deltaseal -loose packed heat induction liners for glass
+spares,drc13022504,spare parts as per quote ref qua63334
+spares,pml12032501,keb combinorm 24v bore size 17mm x keyway 5mm
+spares,pml27022504,spare parts as per quote 900c007184 - 0200/10/12
+spares,skipcut001,skip cuts - 24 slots - d2 material
+steel ends,stse127mm,127mm steel ends
+steel ends,stse153mmp,153mm peel off ends
+steel ends,stse189mmp,189mm steel ends
+steel ends,stse99mm,99mm steel ends
+sticker,am90x25stk,amila sticker 90x25 blank
+sticker,amlemstk,amila lemon sticker 25kg
+sticker,ammanstk,amila mango sticker 25kg
+sticker,amoranstk,amila orange sticker 25kg
+sticker,ampinestk,amila pineapple sticker 25kg
+sticker,amtropstk,amila tropical sticker 25kg
+sticker,ogcstkchick,onga cube sticker chicken
+sticker,ogcstkcube,onga beef 4gx55 label for round bucket
+sticker,ogcstkcube_a,onga beef 4gx3100 rectangular bucket sticker beef
+sticker,ogcstktom,onga cube sticker tomate
+sticker,ogcstktom_a,onga tomate 3100x4g rectangular bucket sticker
+sticker,ogshrimp25kg,onga shrimp sticker 25kg
+sticker,ogstchick25kg,onga chicken sticker 25kg
+sticker,ogstmarin25kg,onga marinade sticker 25kg
+sticker,ogstpondu25kg,onga pondu sticker 25kg
+sticker,ogststew25kg,onga stew sticker 25kg
+sticker,ogsttom25kg_sp,onga tomato stick pack sticker 25kg
+tray,pw00106,dop 200ml liquid tray
+trays,ogttr10gbeef,onga tablet  beef tablette 24x48x10g tray
+trays,ogttr10gbeef12x48,onga tablet  beef carne 12x48x10g tray
+trays,ogttr10gcrevette,onga tablet  crevette/camarao 48x10g tray
+trays,ogttr10gmarin,onga tablet  marinade/tempero 48x10g tray
+trays,ogttr10gpondu,onga tablet  pondu 24x48x10g tray
+trays,ogttr10gpondu12x48,onga tablet  pondu-kizaka 12x48x10g tray
+trays,ogttr10gpoulet,onga tablet  poulet 24x48x10g tray
+trays,ogttr10gtomato,onga tablet  tomato 48x10g tray
+trays,pw00690,jaba shaker tray
+trays,pw604,jaba chicken tablet displays 24 x 48 x 12g
+trays,pw605,jaba beef tablet displays 24 x 48 x 12g

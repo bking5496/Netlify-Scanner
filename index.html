@@ -252,6 +252,13 @@
         // Multiple expiry dates are allowed per stock_code + batch_number combination
         let rawMaterialsDatabase = JSON.parse(localStorage.getItem('rawMaterialsDatabase') || '{}');
         let rmProductsLoadedFromDB = false;
+        
+        // Product Type Database - determines if product is ingredient (kg) or not (units)
+        // Structure: { stockCodePrefix: { productType: 'Ingredient' | 'Non-Ingredient', unitType: 'kg' | 'units' } }
+        // RM* products = Ingredient = kg
+        // PM* products = Non-Ingredient = units
+        let productTypeDatabase = JSON.parse(localStorage.getItem('productTypeDatabase') || '{}');
+        let productTypesLoadedFromDB = false;
 
         // Load FP products from Supabase
         async function loadProductsFromSupabase() {
@@ -357,6 +364,108 @@
             }
         }
 
+        // Load product types from Supabase
+        // Table structure: type (column A), stock_code (column B), description (column C)
+        async function loadProductTypesFromSupabase() {
+            if (!supabase) {
+                console.log('Supabase not available, using cached product types');
+                return false;
+            }
+            try {
+                console.log('Loading product types from Supabase...');
+                const { data, error } = await supabase
+                    .from('product_types')
+                    .select('*');
+                
+                if (error) {
+                    console.error('Error loading product types:', error);
+                    return false;
+                }
+                
+                if (data && data.length > 0) {
+                    productTypeDatabase = {};
+                    data.forEach(item => {
+                        // Column mapping: type (A), stock_code (B), description (C)
+                        const stockCode = (item.stock_code || '').toUpperCase();
+                        const productType = item.type || 'Non-Ingredient';
+                        const description = item.description || '';
+                        if (stockCode) {
+                            productTypeDatabase[stockCode] = {
+                                productType: productType,
+                                description: description,
+                                unitType: productType.toLowerCase() === 'ingredient' ? 'kg' : 'units'
+                            };
+                        }
+                    });
+                    localStorage.setItem('productTypeDatabase', JSON.stringify(productTypeDatabase));
+                    productTypesLoadedFromDB = true;
+                    console.log(`Loaded ${Object.keys(productTypeDatabase).length} product types from Supabase`);
+                    return true;
+                }
+                return false;
+            } catch (err) {
+                console.error('Failed to load product types from Supabase:', err);
+                return false;
+            }
+        }
+        
+        // Live duplicate check against Supabase - checks ALL devices in the session
+        async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, stockCode, expiryDate = null) {
+            if (!supabase || !sessionId) return null;
+            
+            try {
+                const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
+                
+                // Build query based on session type
+                let query = supabase
+                    .from(tableName)
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .eq('batch_number', batchNumber);
+                
+                // For RM, also check stock_code and optionally expiry_date
+                if (sessionType === 'RM') {
+                    query = query.eq('stock_code', stockCode);
+                    if (expiryDate) {
+                        query = query.eq('expiry_date', expiryDate);
+                    }
+                }
+                
+                const { data, error } = await query.limit(1);
+                
+                if (error) {
+                    console.error('Error checking duplicate:', error);
+                    return null;
+                }
+                
+                return data && data.length > 0 ? data[0] : null;
+            } catch (err) {
+                console.error('Failed to check duplicate in Supabase:', err);
+                return null;
+            }
+        }
+        
+        // Get unit type for a stock code (kg for RM/Ingredient, units for PM/Non-Ingredient)
+        function getUnitTypeForStockCode(stockCode) {
+            if (!stockCode) return 'units';
+            const upperCode = stockCode.toUpperCase();
+            
+            // Check product type database first
+            if (productTypeDatabase[upperCode]) {
+                return productTypeDatabase[upperCode].unitType;
+            }
+            
+            // Default logic based on prefix
+            if (upperCode.startsWith('RM')) {
+                return 'kg'; // Raw Materials are measured in kg
+            } else if (upperCode.startsWith('PM')) {
+                return 'units'; // PM products are counted in units
+            }
+            
+            // Default to units for unknown
+            return 'units';
+        }
+        
         function saveProductDatabase() {
             localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
             // Also save to Supabase if available
@@ -569,6 +678,10 @@
                 this.showingSettings = false;
                 this.showingStartStockTake = false;
                 this.showingExpirySelection = false;
+                this.showingSessionHistory = false;
+                this.historySessions = [];
+                this.historyScans = [];
+                this.selectedHistorySession = null;
                 this.pendingScan = null;
                 this.currentTakeDate = new Date().toISOString().split('T')[0];
                 this.syncInterval = null;
@@ -612,6 +725,7 @@
                 if (isGitHubPages || !isNetlify) {
                     await loadProductsFromSupabase();
                     await loadRawMaterialsFromSupabase();
+                    await loadProductTypesFromSupabase();
                 }
                 
                 // Check if there's an active stock take for today
@@ -810,27 +924,81 @@
             }
 
             async loadScans() {
+                const sessionType = this.activeStockTake?.sessionType || 'FP';
+                const sessionId = this.activeStockTake?.id;
+                
                 if (this.useNeonDB) {
                     const data = await db.getStockScans(this.currentTakeDate);
                     
-                    this.scans = data.map(row => ({
-                        id: row.id,
-                        timestamp: new Date(row.scanned_at).getTime(),
-                        date: new Date(row.scanned_at).toLocaleDateString(),
-                        time: new Date(row.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        raw: row.raw_code,
-                        batchNumber: row.batch_number,
-                        palletNumber: row.pallet_number,
-                        casesOnPallet: row.cases_on_pallet,
-                        actualCases: row.actual_cases,
-                        stockCode: row.stock_code,
-                        description: row.description,
-                        valid: true,
-                        deviceId: row.device_id,
-                        scannedBy: row.scanned_by || 'Unknown'
-                    }));
+                    this.scans = data
+                        .filter(row => !row.session_type || row.session_type === sessionType) // Filter by session type
+                        .map(row => ({
+                            id: row.id,
+                            timestamp: new Date(row.scanned_at).getTime(),
+                            date: new Date(row.scanned_at).toLocaleDateString(),
+                            time: new Date(row.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            raw: row.raw_code,
+                            batchNumber: row.batch_number,
+                            palletNumber: row.pallet_number,
+                            casesOnPallet: row.cases_on_pallet,
+                            actualCases: row.actual_cases,
+                            stockCode: row.stock_code,
+                            description: row.description,
+                            valid: true,
+                            deviceId: row.device_id,
+                            scannedBy: row.scanned_by || 'Unknown',
+                            sessionType: row.session_type || 'FP',
+                            expiryDate: row.expiry_date,
+                            location: row.location,
+                            unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
+                        }));
+                } else if (this.isGitHubPages && supabase && sessionId) {
+                    // Load from Supabase for live data across all devices
+                    try {
+                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
+                        
+                        const { data, error } = await supabase
+                            .from(tableName)
+                            .select('*')
+                            .eq('session_id', sessionId)
+                            .order('created_at', { ascending: false });
+                        
+                        if (error) {
+                            console.error('Error loading scans from Supabase:', error);
+                            this.scans = [];
+                            return;
+                        }
+                        
+                        this.scans = (data || []).map(row => ({
+                            id: row.id,
+                            timestamp: new Date(row.created_at).getTime(),
+                            date: new Date(row.created_at).toLocaleDateString(),
+                            time: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            batchNumber: row.batch_number,
+                            palletNumber: row.pallet_number || '',
+                            casesOnPallet: 0,
+                            actualCases: sessionType === 'RM' ? row.quantity : row.cases,
+                            stockCode: row.stock_code,
+                            description: row.description,
+                            valid: true,
+                            deviceId: row.device_id,
+                            scannedBy: row.scanned_by || 'Unknown',
+                            sessionType: sessionType,
+                            expiryDate: row.expiry_date,
+                            location: row.location,
+                            unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
+                        }));
+                        
+                        console.log(`Loaded ${this.scans.length} scans from Supabase for session ${sessionId}`);
+                    } catch (err) {
+                        console.error('Failed to load scans from Supabase:', err);
+                        this.scans = [];
+                    }
                 } else {
-                    this.scans = localStorage_db.list('scan:');
+                    // Fallback to localStorage
+                    const allScans = localStorage_db.list('scan:');
+                    // Filter by session type
+                    this.scans = allScans.filter(s => !s.sessionType || s.sessionType === sessionType);
                     this.scans.sort((a, b) => b.timestamp - a.timestamp);
                 }
             }
@@ -958,6 +1126,9 @@
                     const rmInfo = rawMaterialsDatabase[foundStockCode] || rawMaterialsDatabase[foundStockCode.toUpperCase()];
                     const description = rmInfo?.description || 'Unknown Raw Material - Add to database';
                     
+                    // Determine unit type based on stock code prefix
+                    const unitType = getUnitTypeForStockCode(foundStockCode);
+                    
                     // Check for expiry dates if batch number is known
                     let expiryDate = null;
                     let availableExpiryDates = [];
@@ -986,13 +1157,14 @@
                         raw: code,
                         stockCode: foundStockCode,
                         batchNumber: batchNumber || 'N/A',
-                        palletNumber: '01', // Default for RM
-                        casesOnPallet: 1, // Will be entered manually
+                        palletNumber: null, // RM doesn't use pallets
+                        casesOnPallet: 0, // Will be entered as quantity
                         description: description,
                         expiryDate: expiryDate,
                         availableExpiryDates: availableExpiryDates,
                         needsExpiryConfirmation: needsExpiryConfirmation,
-                        isRawMaterial: true
+                        isRawMaterial: true,
+                        unitType: unitType // 'kg' or 'units'
                     };
                 }
                 
@@ -1003,14 +1175,33 @@
                 };
             }
 
-            async checkDuplicate(batchNumber, palletNumber) {
+            async checkDuplicate(batchNumber, palletNumber, stockCode = null, expiryDate = null) {
                 if (this.useNeonDB) {
                     return await db.checkDuplicate(this.currentTakeDate, batchNumber, palletNumber);
-                } else {
-                    return this.scans.find(s => 
-                        s.batchNumber === batchNumber && 
-                        s.palletNumber === palletNumber
+                } else if (this.isGitHubPages && this.activeStockTake?.id) {
+                    // Live check against Supabase for all devices in this session
+                    const sessionType = this.activeStockTake?.sessionType || 'FP';
+                    return await checkDuplicateInSupabase(
+                        this.activeStockTake.id,
+                        sessionType,
+                        batchNumber,
+                        stockCode,
+                        expiryDate
                     );
+                } else {
+                    // Fallback to local check
+                    if (this.activeStockTake?.sessionType === 'RM') {
+                        return this.scans.find(s => 
+                            s.batchNumber === batchNumber && 
+                            s.stockCode === stockCode &&
+                            (!expiryDate || s.expiryDate === expiryDate)
+                        );
+                    } else {
+                        return this.scans.find(s => 
+                            s.batchNumber === batchNumber && 
+                            s.palletNumber === palletNumber
+                        );
+                    }
                 }
             }
 
@@ -1126,22 +1317,34 @@
                     return;
                 }
 
-                // Check for duplicate
-                const duplicate = await this.checkDuplicate(parsed.batchNumber, parsed.palletNumber);
+                // Check for duplicate - include stock_code and expiry for RM
+                const duplicate = await this.checkDuplicate(
+                    parsed.batchNumber, 
+                    parsed.palletNumber,
+                    parsed.stockCode,
+                    parsed.expiryDate
+                );
                 
                 if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.date + ' ' + duplicate.time;
+                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
                     const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
                     
                     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                     
+                    const sessionType = this.activeStockTake?.sessionType || 'FP';
+                    const itemLabel = sessionType === 'RM' ? 'item' : 'pallet';
+                    
                     const rescan = confirm(
                         `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
+                        `Stock Code: ${parsed.stockCode}\n` +
                         `Batch: ${parsed.batchNumber}\n` +
-                        `Pallet: ${parsed.palletNumber}\n\n` +
-                        `Previously scanned by: ${scannedByName}\n` +
-                        `at ${timestamp}\n\n` +
-                        `Do you want to rescan this pallet?`
+                        (sessionType !== 'RM' ? `Pallet: ${parsed.palletNumber}\n` : '') +
+                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
+                        `\nPreviously scanned by: ${scannedByName}\n` +
+                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
+                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                        `Do you want to rescan this ${itemLabel}?`
                     );
                     
                     if (!rescan) {
@@ -1157,7 +1360,8 @@
             async saveScan(parsedData, actualCases) {
                 const userName = getUserName();
                 const sessionType = this.activeStockTake?.sessionType || 'FP';
-                console.log('Saving scan:', { parsedData, actualCases, userName, useNeonDB: this.useNeonDB, sessionType });
+                const sessionId = this.activeStockTake?.id || null;
+                console.log('Saving scan:', { parsedData, actualCases, userName, useNeonDB: this.useNeonDB, isGitHubPages: this.isGitHubPages, sessionType, sessionId });
                 
                 if (this.useNeonDB) {
                     const result = await db.insertStockScan({
@@ -1173,10 +1377,52 @@
                         scanned_by: userName,
                         session_type: sessionType,
                         expiry_date: parsedData.expiryDate || null,
-                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null
+                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                        unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
                     });
                     console.log('Insert result:', result);
+                } else if (this.isGitHubPages && supabase && sessionId) {
+                    // Save directly to Supabase for live data
+                    try {
+                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
+                        
+                        const record = {
+                            session_id: sessionId,
+                            batch_number: parsedData.batchNumber,
+                            stock_code: parsedData.stockCode,
+                            description: parsedData.description,
+                            scanned_by: userName,
+                            device_id: DEVICE_ID,
+                            location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                            unit_type: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
+                        };
+                        
+                        if (sessionType === 'RM') {
+                            record.quantity = actualCases;
+                            record.expiry_date = parsedData.expiryDate || null;
+                        } else {
+                            record.cases = actualCases;
+                            record.pallet_number = parsedData.palletNumber;
+                        }
+                        
+                        const { data, error } = await supabase
+                            .from(tableName)
+                            .insert([record])
+                            .select();
+                        
+                        if (error) {
+                            console.error('Supabase insert error:', error);
+                            throw error;
+                        }
+                        
+                        console.log('Saved to Supabase:', data);
+                    } catch (err) {
+                        console.error('Failed to save to Supabase:', err);
+                        alert('Failed to save scan to database. Please check your connection.');
+                        throw err;
+                    }
                 } else {
+                    // Fallback to localStorage (offline mode)
                     const scan = {
                         id: 'scan:' + Date.now(),
                         timestamp: Date.now(),
@@ -1195,7 +1441,8 @@
                         sessionType: sessionType,
                         expiryDate: parsedData.expiryDate || null,
                         isRawMaterial: parsedData.isRawMaterial || false,
-                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null
+                        location: this.sessionSettings.locationScanningEnabled ? this.sessionSettings.currentLocation : null,
+                        unitType: parsedData.unitType || (sessionType === 'RM' ? 'kg' : 'cases')
                     };
                     
                     localStorage_db.set(scan.id, scan);
@@ -1208,8 +1455,30 @@
             }
 
             async deleteScan(id) {
+                const sessionType = this.activeStockTake?.sessionType || 'FP';
+                
                 if (this.useNeonDB) {
                     await db.deleteStockScan(id);
+                } else if (this.isGitHubPages && supabase) {
+                    // Delete from Supabase
+                    try {
+                        const tableName = sessionType === 'RM' ? 'raw_materials' : 'products';
+                        
+                        const { error } = await supabase
+                            .from(tableName)
+                            .delete()
+                            .eq('id', id);
+                        
+                        if (error) {
+                            console.error('Supabase delete error:', error);
+                            throw error;
+                        }
+                        
+                        console.log('Deleted from Supabase:', id);
+                    } catch (err) {
+                        console.error('Failed to delete from Supabase:', err);
+                        alert('Failed to delete scan from database.');
+                    }
                 } else {
                     localStorage_db.delete(id);
                 }
@@ -1220,10 +1489,11 @@
 
             async submitCaseCount() {
                 const input = document.getElementById('caseInput');
-                const actualCases = parseInt(input.value);
+                const isKg = this.currentScan?.unitType === 'kg';
+                const actualCases = isKg ? parseFloat(input.value) : parseInt(input.value);
                 
                 if (isNaN(actualCases) || actualCases < 0) {
-                    alert('Please enter a valid number of cases');
+                    alert(isKg ? 'Please enter a valid weight in kg' : 'Please enter a valid quantity');
                     return;
                 }
                 
@@ -1254,22 +1524,34 @@
                 const parsed = this.pendingScan;
                 this.pendingScan = null;
                 
-                // Check for duplicate
-                const duplicate = await this.checkDuplicate(parsed.batchNumber, parsed.palletNumber);
+                // Check for duplicate - include stock_code and expiry for RM
+                const duplicate = await this.checkDuplicate(
+                    parsed.batchNumber, 
+                    parsed.palletNumber,
+                    parsed.stockCode,
+                    parsed.expiryDate
+                );
                 
                 if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.date + ' ' + duplicate.time;
+                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
                     const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
                     
                     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                     
+                    const sessionType = this.activeStockTake?.sessionType || 'FP';
+                    const itemLabel = sessionType === 'RM' ? 'item' : 'pallet';
+                    
                     const rescan = confirm(
                         `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
+                        `Stock Code: ${parsed.stockCode}\n` +
                         `Batch: ${parsed.batchNumber}\n` +
-                        `Pallet: ${parsed.palletNumber}\n\n` +
-                        `Previously scanned by: ${scannedByName}\n` +
-                        `at ${timestamp}\n\n` +
-                        `Do you want to rescan this pallet?`
+                        (sessionType !== 'RM' ? `Pallet: ${parsed.palletNumber}\n` : '') +
+                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
+                        `\nPreviously scanned by: ${scannedByName}\n` +
+                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
+                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                        `Do you want to rescan this ${itemLabel}?`
                     );
                     
                     if (!rescan) {
@@ -1321,6 +1603,154 @@
             hideSettings() {
                 this.showingSettings = false;
                 this.render();
+            }
+
+            // Session History Methods
+            showSessionHistory() {
+                this.showingSessionHistory = true;
+                this.loadAvailableSessions();
+                this.render();
+            }
+
+            hideSessionHistory() {
+                this.showingSessionHistory = false;
+                this.historyDate = null;
+                this.historySessions = [];
+                this.historyScans = [];
+                this.render();
+            }
+
+            async loadAvailableSessions() {
+                // Get all unique sessions from localStorage
+                const allSessions = [];
+                
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('stocktake_')) {
+                        try {
+                            const session = JSON.parse(localStorage.getItem(key));
+                            if (session && session.id) {
+                                allSessions.push({
+                                    id: session.id,
+                                    date: session.date,
+                                    sessionType: session.sessionType || 'FP',
+                                    device: session.device || 'Unknown',
+                                    startTime: session.startTime,
+                                    endTime: session.endTime,
+                                    status: session.status || 'active'
+                                });
+                            }
+                        } catch (e) {
+                            console.error('Error parsing session:', e);
+                        }
+                    }
+                }
+                
+                // Sort by date descending
+                allSessions.sort((a, b) => {
+                    const dateCompare = (b.date || '').localeCompare(a.date || '');
+                    if (dateCompare !== 0) return dateCompare;
+                    return (b.startTime || '').localeCompare(a.startTime || '');
+                });
+                
+                this.historySessions = allSessions;
+            }
+
+            async loadSessionHistory(sessionId) {
+                this.historyScans = [];
+                
+                // Find the session
+                const session = this.historySessions.find(s => s.id === sessionId);
+                if (!session) {
+                    alert('Session not found');
+                    return;
+                }
+                
+                this.selectedHistorySession = session;
+                
+                // Load scans from Supabase
+                if (this.isGitHubPages) {
+                    try {
+                        // Query based on session type
+                        const tableName = session.sessionType === 'RM' ? 'raw_materials' : 'products';
+                        
+                        const { data, error } = await supabase
+                            .from(tableName)
+                            .select('*')
+                            .eq('session_id', sessionId)
+                            .order('created_at', { ascending: true });
+                        
+                        if (error) throw error;
+                        
+                        this.historyScans = (data || []).map(item => ({
+                            id: item.id,
+                            batchNumber: item.batch_number,
+                            stockCode: item.stock_code,
+                            description: item.description,
+                            cases: session.sessionType === 'RM' ? item.quantity : item.cases,
+                            palletNumber: item.pallet_number,
+                            location: item.location,
+                            expiryDate: item.expiry_date,
+                            unitType: item.unit_type || (session.sessionType === 'RM' ? 'kg' : 'cases'),
+                            timestamp: item.created_at,
+                            scannedBy: item.scanned_by
+                        }));
+                    } catch (error) {
+                        console.error('Error loading history scans:', error);
+                        alert('Error loading session scans. Check console for details.');
+                    }
+                } else {
+                    // For Netlify/Neon, we'd need API support
+                    alert('Session history is only available on GitHub Pages deployment');
+                }
+                
+                this.render();
+            }
+
+            exportHistorySession() {
+                if (!this.selectedHistorySession || this.historyScans.length === 0) {
+                    alert('No session data to export');
+                    return;
+                }
+                
+                const session = this.selectedHistorySession;
+                
+                // Prepare export data
+                const exportData = this.historyScans.map(scan => {
+                    const base = {
+                        'Stock Code': scan.stockCode,
+                        'Description': scan.description,
+                        'Batch Number': scan.batchNumber
+                    };
+                    
+                    if (session.sessionType === 'RM') {
+                        base['Quantity'] = scan.cases;
+                        base['Unit'] = scan.unitType === 'kg' ? 'kg' : 'units';
+                        base['Location'] = scan.location || '';
+                        base['Expiry Date'] = scan.expiryDate || '';
+                    } else {
+                        base['Cases'] = scan.cases;
+                        base['Pallet Number'] = scan.palletNumber || '';
+                        base['Location'] = scan.location || '';
+                    }
+                    
+                    base['Scanned By'] = scan.scannedBy || '';
+                    base['Timestamp'] = new Date(scan.timestamp).toLocaleString();
+                    
+                    return base;
+                });
+                
+                // Create workbook
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Stock Count');
+                
+                // Generate filename
+                const sessionTypeLabel = session.sessionType === 'RM' ? 'RawMaterials' : 'FinishedProducts';
+                const filename = `StockCount_${sessionTypeLabel}_${session.date}_${session.id.slice(-6)}.xlsx`;
+                
+                // Download
+                XLSX.writeFile(wb, filename);
             }
 
             async saveSettings() {
@@ -1950,27 +2380,43 @@
                                                 ${scan.stockCode}
                                             </div>
                                             <h3 class="text-lg font-medium text-slate-900 leading-tight mb-1">${scan.description}</h3>
-                                            <div class="text-sm text-slate-500">Batch: ${scan.batchNumber} • Pallet: ${scan.palletNumber}</div>
+                                            ${scan.isRawMaterial ? `
+                                                <div class="text-sm text-slate-500">Batch: ${scan.batchNumber}</div>
+                                                <div class="mt-1 inline-block px-2 py-0.5 text-xs font-bold ${scan.unitType === 'kg' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'} rounded-full">
+                                                    ${scan.unitType === 'kg' ? '⚖️ Measured in KG' : '📦 Counted in Units'}
+                                                </div>
+                                            ` : `
+                                                <div class="text-sm text-slate-500">Batch: ${scan.batchNumber} • Pallet: ${scan.palletNumber}</div>
+                                            `}
                                         </div>
 
                                         <!-- Count Input -->
                                         <div class="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                                            <div class="flex justify-between items-center mb-4">
-                                                <span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Expected</span>
-                                                <span class="text-2xl font-bold text-slate-400">${scan.casesOnPallet}</span>
-                                            </div>
+                                            ${!scan.isRawMaterial ? `
+                                                <div class="flex justify-between items-center mb-4">
+                                                    <span class="text-sm font-bold text-slate-500 uppercase tracking-wider">Expected</span>
+                                                    <span class="text-2xl font-bold text-slate-400">${scan.casesOnPallet}</span>
+                                                </div>
+                                            ` : ''}
                                             
                                             <div class="relative">
-                                                <label class="block text-xs font-bold ${isExpired ? 'text-red-600' : 'text-indigo-600'} uppercase tracking-wider mb-2">Actual Count</label>
+                                                <label class="block text-xs font-bold ${isExpired ? 'text-red-600' : 'text-indigo-600'} uppercase tracking-wider mb-2">
+                                                    ${scan.isRawMaterial ? (scan.unitType === 'kg' ? 'Quantity (KG)' : 'Quantity (Units)') : 'Actual Count'}
+                                                </label>
                                                 <input
                                                     type="number"
                                                     id="caseInput"
-                                                    value="${scan.casesOnPallet}"
+                                                    value="${scan.isRawMaterial ? '' : scan.casesOnPallet}"
                                                     min="0"
+                                                    ${scan.unitType === 'kg' ? 'step="0.01"' : ''}
+                                                    placeholder="${scan.isRawMaterial ? 'Enter ' + scan.unitType : ''}"
                                                     class="w-full px-4 py-4 bg-white border-2 ${isExpired ? 'border-red-100 text-red-900 focus:border-red-600 focus:ring-red-50' : 'border-indigo-100 text-indigo-900 focus:border-indigo-600 focus:ring-indigo-50'} rounded-xl text-4xl font-black text-center focus:ring-4 outline-none transition-all"
                                                     autofocus
                                                     onclick="this.select()"
                                                 />
+                                                ${scan.isRawMaterial ? `
+                                                    <div class="mt-2 text-center text-sm text-slate-500">${scan.unitType === 'kg' ? 'Enter weight in kilograms' : 'Enter quantity in units'}</div>
+                                                ` : ''}
                                             </div>
                                         </div>
                                         
@@ -2160,6 +2606,156 @@
                     return;
                 }
 
+                // Session History Screen
+                if (this.showingSessionHistory) {
+                    const groupedSessions = {};
+                    this.historySessions.forEach(session => {
+                        const date = session.date || 'Unknown';
+                        if (!groupedSessions[date]) groupedSessions[date] = [];
+                        groupedSessions[date].push(session);
+                    });
+                    
+                    app.innerHTML = `
+                        <div class="min-h-screen bg-slate-50 p-4">
+                            <div class="max-w-2xl mx-auto">
+                                <!-- Header -->
+                                <div class="bg-white rounded-2xl shadow-lg shadow-slate-200 overflow-hidden mb-4">
+                                    <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 bg-violet-500 rounded-xl flex items-center justify-center">
+                                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h2 class="text-lg font-bold text-slate-900">Session History</h2>
+                                                <p class="text-xs text-slate-500">${this.historySessions.length} session(s) found</p>
+                                            </div>
+                                        </div>
+                                        <button onclick="app.hideSessionHistory()" class="p-2 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
+                                            <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    
+                                    ${this.selectedHistorySession ? `
+                                        <!-- Selected Session Details -->
+                                        <div class="p-4 bg-violet-50 border-b border-violet-100">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="${this.selectedHistorySession.sessionType === 'RM' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'} text-xs font-bold px-2 py-0.5 rounded-full">
+                                                            ${this.selectedHistorySession.sessionType === 'RM' ? 'Raw Materials' : 'Finished Products'}
+                                                        </span>
+                                                        <span class="text-xs text-slate-500">${this.selectedHistorySession.date}</span>
+                                                    </div>
+                                                    <p class="text-sm text-slate-600 mt-1">Session: ${this.selectedHistorySession.id.slice(-8)}</p>
+                                                    <p class="text-xs text-slate-500">Device: ${this.selectedHistorySession.device}</p>
+                                                </div>
+                                                <button onclick="app.exportHistorySession()" class="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 transition-colors flex items-center gap-2">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                                    </svg>
+                                                    Export
+                                                </button>
+                                            </div>
+                                            <div class="text-sm text-violet-700 font-medium">${this.historyScans.length} scan(s)</div>
+                                        </div>
+                                        
+                                        <!-- Scans List -->
+                                        <div class="max-h-80 overflow-y-auto">
+                                            ${this.historyScans.length > 0 ? this.historyScans.map((scan, idx) => `
+                                                <div class="p-3 border-b border-slate-100 hover:bg-slate-50">
+                                                    <div class="flex items-center justify-between">
+                                                        <div class="flex-1">
+                                                            <div class="flex items-center gap-2">
+                                                                <span class="font-bold text-sm text-slate-800">${scan.stockCode}</span>
+                                                                <span class="text-xs text-slate-400">#${scan.batchNumber}</span>
+                                                            </div>
+                                                            <p class="text-xs text-slate-500 truncate">${scan.description || 'No description'}</p>
+                                                            <div class="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                                                                ${scan.location ? `<span>📍 ${scan.location}</span>` : ''}
+                                                                ${scan.expiryDate ? `<span>📅 ${scan.expiryDate}</span>` : ''}
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-right">
+                                                            <div class="font-bold text-lg ${this.selectedHistorySession.sessionType === 'RM' ? 'text-amber-600' : 'text-indigo-600'}">
+                                                                ${scan.cases}
+                                                            </div>
+                                                            <div class="text-xs text-slate-500">${scan.unitType || 'units'}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            `).join('') : `
+                                                <div class="p-8 text-center text-slate-400">
+                                                    <p>No scans in this session</p>
+                                                </div>
+                                            `}
+                                        </div>
+                                        
+                                        <div class="p-4 border-t border-slate-100">
+                                            <button onclick="app.selectedHistorySession = null; app.historyScans = []; app.render();" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-sm font-bold transition-colors">
+                                                ← Back to Sessions
+                                            </button>
+                                        </div>
+                                    ` : `
+                                        <!-- Sessions List -->
+                                        <div class="max-h-96 overflow-y-auto">
+                                            ${Object.keys(groupedSessions).length > 0 ? Object.entries(groupedSessions).map(([date, sessions]) => `
+                                                <div class="border-b border-slate-100">
+                                                    <div class="px-4 py-2 bg-slate-50 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                                        ${date}
+                                                    </div>
+                                                    ${sessions.map(session => `
+                                                        <button onclick="app.loadSessionHistory('${session.id}')" class="w-full p-4 hover:bg-slate-50 transition-colors text-left border-b border-slate-50 last:border-0">
+                                                            <div class="flex items-center justify-between">
+                                                                <div class="flex items-center gap-3">
+                                                                    <div class="w-10 h-10 ${session.sessionType === 'RM' ? 'bg-amber-100' : 'bg-indigo-100'} rounded-xl flex items-center justify-center">
+                                                                        <span class="${session.sessionType === 'RM' ? 'text-amber-600' : 'text-indigo-600'} font-bold text-xs">${session.sessionType}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <div class="flex items-center gap-2">
+                                                                            <span class="font-bold text-sm text-slate-800">${session.sessionType === 'RM' ? 'Raw Materials' : 'Finished Products'}</span>
+                                                                            <span class="${session.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} text-xs font-medium px-2 py-0.5 rounded-full">
+                                                                                ${session.status || 'active'}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div class="text-xs text-slate-500 mt-0.5">
+                                                                            Session: ${session.id.slice(-8)} • ${session.device || 'Unknown device'}
+                                                                        </div>
+                                                                        ${session.startTime ? `<div class="text-xs text-slate-400">${session.startTime}</div>` : ''}
+                                                                    </div>
+                                                                </div>
+                                                                <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                                </svg>
+                                                            </div>
+                                                        </button>
+                                                    `).join('')}
+                                                </div>
+                                            `).join('') : `
+                                                <div class="p-8 text-center text-slate-400">
+                                                    <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                    <p class="font-medium">No sessions found</p>
+                                                    <p class="text-sm">Complete a stock count to see it here</p>
+                                                </div>
+                                            `}
+                                        </div>
+                                    `}
+                                </div>
+                                
+                                <button onclick="app.hideSessionHistory()" class="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 py-3 rounded-xl text-sm font-bold transition-colors">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
                 if (this.showingSettings) {
                     app.innerHTML = `
                         <div class="min-h-screen bg-slate-50 p-4 flex items-center justify-center">
@@ -2308,6 +2904,11 @@
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
+                                    <button onclick="app.showSessionHistory()" class="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors" title="History">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                    </button>
                                     <button onclick="app.showProductDatabase()" class="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors" title="Products">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
