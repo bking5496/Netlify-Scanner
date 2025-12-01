@@ -2291,7 +2291,31 @@
                 // Get all unique sessions from localStorage
                 const allSessions = [];
                 const seenSessionIds = new Set();
+                const activeSessionIds = new Set();
+                const today = new Date().toLocaleDateString('en-CA');
                 
+                // First, get the current active session from activeStockTake
+                const activeStockTake = getActiveStockTake();
+                if (activeStockTake && activeStockTake.id) {
+                    activeSessionIds.add(activeStockTake.id);
+                }
+                
+                // Also check for any sessions stored with 'active' status in localStorage
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('stocktake_')) {
+                        try {
+                            const session = JSON.parse(localStorage.getItem(key));
+                            if (session && session.id && session.status === 'active') {
+                                activeSessionIds.add(session.id);
+                            }
+                        } catch (e) {
+                            // Ignore parsing errors for this check
+                        }
+                    }
+                }
+                
+                // Now load all sessions from localStorage
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key && key.startsWith('stocktake_')) {
@@ -2299,6 +2323,8 @@
                             const session = JSON.parse(localStorage.getItem(key));
                             if (session && session.id && !seenSessionIds.has(session.id)) {
                                 seenSessionIds.add(session.id);
+                                // Determine if session is active
+                                const isActive = activeSessionIds.has(session.id);
                                 allSessions.push({
                                     id: session.id,
                                     date: session.date,
@@ -2306,7 +2332,7 @@
                                     device: session.device || 'Unknown',
                                     startTime: session.startTime,
                                     endTime: session.endTime,
-                                    status: session.status || 'active'
+                                    status: isActive ? 'active' : (session.status || 'completed')
                                 });
                             }
                         } catch (e) {
@@ -2330,13 +2356,16 @@
                             data.forEach(scan => {
                                 if (scan.session_id && !sessionMap.has(scan.session_id) && !seenSessionIds.has(scan.session_id)) {
                                     const scanDate = new Date(scan.scanned_at);
+                                    const sessionDate = scanDate.toLocaleDateString('en-CA');
+                                    // Check if this is an active session
+                                    const isActive = activeSessionIds.has(scan.session_id);
                                     sessionMap.set(scan.session_id, {
                                         id: scan.session_id,
-                                        date: scanDate.toLocaleDateString('en-CA'),
+                                        date: sessionDate,
                                         sessionType: scan.session_type || 'FP',
                                         device: scan.device_id || 'Unknown',
                                         startTime: scanDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                        status: 'completed'
+                                        status: isActive ? 'active' : 'completed'
                                     });
                                     seenSessionIds.add(scan.session_id);
                                 }
@@ -2350,8 +2379,11 @@
                     }
                 }
                 
-                // Sort by date descending
+                // Sort by date descending, with active sessions first
                 allSessions.sort((a, b) => {
+                    // Active sessions come first
+                    if (a.status === 'active' && b.status !== 'active') return -1;
+                    if (b.status === 'active' && a.status !== 'active') return 1;
                     const dateCompare = (b.date || '').localeCompare(a.date || '');
                     if (dateCompare !== 0) return dateCompare;
                     return (b.startTime || '').localeCompare(a.startTime || '');
@@ -3588,8 +3620,9 @@
                         if (!groupedSessions[date]) groupedSessions[date] = [];
                         groupedSessions[date].push(session);
                         
-                        // Separate live (active today) from historical
-                        if (session.status === 'active' && date === today) {
+                        // Separate live (active) from historical
+                        // A session is live if its status is 'active'
+                        if (session.status === 'active') {
                             liveSessions.push(session);
                         } else {
                             historicalSessions.push(session);
