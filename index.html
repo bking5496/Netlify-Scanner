@@ -10,10 +10,20 @@
     <title>Stock Scanner</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563EB'/><path d='M25 30h10v40H25zM40 30h5v40h-5zM50 30h10v40H50zM65 30h5v40h-5zM75 30h5v40h-5z' fill='white'/></svg>">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563EB'/><path d='M25 30h10v40H25zM40 30h5v40h-5zM50 30h10v40H50zM65 30h5v40h-5zM75 30h5v40h-5z' fill='white'/></svg>">
+    <!-- Preconnect to CDNs for faster loading -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://exltxjvzsefmaxlgxyio.supabase.co">
+    <!-- Critical CSS inline, external scripts deferred where possible -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- XLSX loaded async - only needed for import/export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" async></script>
     <style>
+        /* Critical CSS - inline for faster first paint */
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        
         /* iOS camera fixes */
         #scanner video {
             object-fit: cover !important;
@@ -67,6 +77,26 @@
             #app {
                 max-width: 64rem; /* lg:max-w-5xl equivalent */
             }
+        }
+        
+        /* Performance: GPU acceleration for animated elements */
+        .animate-pulse, .animate-spin, .hover-lift, #scanner video {
+            will-change: transform;
+            transform: translateZ(0);
+        }
+        
+        /* Reduce paint on scroll */
+        #app {
+            contain: layout style;
+        }
+        
+        /* Smooth animations */
+        .animate-fade-in {
+            animation: fadeIn 0.15s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
     </style>
 </head>
@@ -338,58 +368,83 @@
         let productTypesLoadedFromDB = false;
 
         // Load FP products from Supabase
-        async function loadProductsFromSupabase() {
+        let _productsLoadPromise = null;
+        async function loadProductsFromSupabase(forceReload = false) {
+            // Return cached promise if already loading
+            if (_productsLoadPromise && !forceReload) return _productsLoadPromise;
+            
+            // Skip if already loaded and not forcing reload
+            if (productsLoadedFromDB && !forceReload) {
+                return true;
+            }
+            
             if (!supabase) {
                 console.log('Supabase not available, using cached products');
                 return false;
             }
-            try {
-                console.log('Loading FP products from Supabase...');
-                const { data, error } = await supabase
-                    .from('products')
-                    .select('*');
-                
-                if (error) {
-                    console.error('Error loading products:', error);
+            
+            _productsLoadPromise = (async () => {
+                try {
+                    console.log('Loading FP products from Supabase...');
+                    const { data, error } = await supabase
+                        .from('products')
+                        .select('batch_number,stock_code,description'); // Only select needed fields
+                    
+                    if (error) {
+                        console.error('Error loading products:', error);
+                        return false;
+                    }
+                    
+                    if (data && data.length > 0) {
+                        // Convert array to object keyed by batch_number
+                        productDatabase = {};
+                        data.forEach(product => {
+                            const batchNum = product.batch_number || product.BatchNumber || product.batchnumber;
+                            const stockCode = product.stock_code || product.StockCode || product.stockcode;
+                            const description = product.description || product.Description;
+                            if (batchNum) {
+                                productDatabase[batchNum] = { 
+                                    stockCode: stockCode || '', 
+                                    description: description || '' 
+                                };
+                            }
+                        });
+                        // Cache in localStorage for offline use
+                        localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
+                        productsLoadedFromDB = true;
+                        console.log(`Loaded ${Object.keys(productDatabase).length} FP products from Supabase`);
+                        return true;
+                    }
+                    return false;
+                } catch (err) {
+                    console.error('Failed to load products from Supabase:', err);
                     return false;
                 }
-                
-                if (data && data.length > 0) {
-                    // Convert array to object keyed by batch_number
-                    productDatabase = {};
-                    data.forEach(product => {
-                        const batchNum = product.batch_number || product.BatchNumber || product.batchnumber;
-                        const stockCode = product.stock_code || product.StockCode || product.stockcode;
-                        const description = product.description || product.Description;
-                        if (batchNum) {
-                            productDatabase[batchNum] = { 
-                                stockCode: stockCode || '', 
-                                description: description || '' 
-                            };
-                        }
-                    });
-                    // Cache in localStorage for offline use
-                    localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
-                    productsLoadedFromDB = true;
-                    console.log(`Loaded ${Object.keys(productDatabase).length} FP products from Supabase`);
-                    return true;
-                }
-                return false;
-            } catch (err) {
-                console.error('Failed to load products from Supabase:', err);
-                return false;
-            }
+            })();
+            
+            return _productsLoadPromise;
         }
         
         // Load RM products from Supabase
-        async function loadRawMaterialsFromSupabase() {
+        let _rmProductsLoadPromise = null;
+        async function loadRawMaterialsFromSupabase(forceReload = false) {
+            // Return cached promise if already loading
+            if (_rmProductsLoadPromise && !forceReload) return _rmProductsLoadPromise;
+            
+            // Skip if already loaded and not forcing reload
+            if (rmProductsLoadedFromDB && !forceReload) {
+                return true;
+            }
+            
             if (!supabase) {
                 console.log('Supabase not available, using cached raw materials');
                 return false;
             }
-            try {
-                console.log('Loading RM products from Supabase...');
-                const { data, error } = await supabase
+            
+            _rmProductsLoadPromise = (async () => {
+                try {
+                    console.log('Loading RM products from Supabase...');
+                    const { data, error } = await supabase
                     .from('raw_materials')
                     .select('*');
                 
@@ -439,20 +494,34 @@
                 console.error('Failed to load raw materials from Supabase:', err);
                 return false;
             }
+            })();
+            
+            return _rmProductsLoadPromise;
         }
 
         // Load product types from Supabase
         // Table structure: type (column A), stock_code (column B), description (column C)
-        async function loadProductTypesFromSupabase() {
+        let _productTypesLoadPromise = null;
+        async function loadProductTypesFromSupabase(forceReload = false) {
+            // Return cached promise if already loading
+            if (_productTypesLoadPromise && !forceReload) return _productTypesLoadPromise;
+            
+            // Skip if already loaded and not forcing reload
+            if (productTypesLoadedFromDB && !forceReload) {
+                return true;
+            }
+            
             if (!supabase) {
                 console.log('Supabase not available, using cached product types');
                 return false;
             }
-            try {
-                console.log('Loading product types from Supabase...');
-                const { data, error } = await supabase
-                    .from('product_types')
-                    .select('*');
+            
+            _productTypesLoadPromise = (async () => {
+                try {
+                    console.log('Loading product types from Supabase...');
+                    const { data, error } = await supabase
+                        .from('product_types')
+                        .select('type,stock_code,description'); // Only select needed fields
                 
                 if (error) {
                     console.error('Error loading product types:', error);
@@ -484,6 +553,9 @@
                 console.error('Failed to load product types from Supabase:', err);
                 return false;
             }
+            })();
+            
+            return _productTypesLoadPromise;
         }
         
         // Live duplicate check against Supabase - checks ALL devices in the session
@@ -491,10 +563,10 @@
             if (!supabase || !sessionId) return null;
             
             try {
-                // All scans are in stock_scans table
+                // All scans are in stock_scans table - only select fields needed for duplicate display
                 let query = supabase
                     .from('stock_scans')
-                    .select('*')
+                    .select('id,scanned_at,created_at,scanned_by,device_id')
                     .eq('session_id', sessionId)
                     .eq('batch_number', batchNumber);
                 
@@ -1044,6 +1116,11 @@
                 // Modal State
                 this.modalState = null; // { title, message, type, fields, onConfirm, onCancel, confirmText, cancelText }
                 
+                // Performance optimization
+                this._renderScheduled = false;
+                this._lastRenderTime = 0;
+                this._renderDebounceMs = 16; // ~60fps max
+                
                 this.init();
             }
 
@@ -1122,7 +1199,8 @@
             async refreshSessionsFromSupabase(force = false) {
                 if (!supabaseSessionsEnabled || !this.isBrowserOnline) return;
                 const now = Date.now();
-                if (!force && this.lastSessionSync && (now - this.lastSessionSync) < 5000) {
+                // Throttle to once per 10 seconds unless forced
+                if (!force && this.lastSessionSync && (now - this.lastSessionSync) < 10000) {
                     return;
                 }
                 await syncSessionsFromSupabase(this.currentTakeDate);
@@ -1130,16 +1208,33 @@
             }
 
             async init() {
-                // Try to initialize database
-                await db.init();
-                await this.refreshSessionsFromSupabase(true);
+                // Show loading state immediately
+                const app = document.getElementById('app');
+                app.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center bg-white">
+                        <div class="text-center">
+                            <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+                            <p class="text-slate-600 font-medium">Loading...</p>
+                        </div>
+                    </div>
+                `;
                 
-                // Load products from Supabase (for GitHub Pages deployment)
+                // Initialize database and load data in parallel for speed
+                const initPromises = [
+                    db.init(),
+                    this.refreshSessionsFromSupabase(true)
+                ];
+                
+                // Load products in parallel if Supabase is available
                 if (supabase) {
-                    await loadProductsFromSupabase();
-                    await loadRawMaterialsFromSupabase();
-                    await loadProductTypesFromSupabase();
+                    initPromises.push(
+                        loadProductsFromSupabase(),
+                        loadRawMaterialsFromSupabase(),
+                        loadProductTypesFromSupabase()
+                    );
                 }
+                
+                await Promise.all(initPromises);
                 
                 // Check if there's an active stock take for today
                 if (this.activeStockTake && this.activeStockTake.date === this.currentTakeDate) {
@@ -1432,9 +1527,10 @@
                 } else if (supabase && sessionId) {
                     // Load ALL scans from stock_scans table, filtered by session
                     try {
+                        // Only select fields we actually need for display
                         const { data, error } = await supabase
                             .from('stock_scans')
-                            .select('*')
+                            .select('id,scanned_at,raw_code,batch_number,pallet_number,cases_on_pallet,actual_cases,stock_code,description,device_id,scanned_by,session_type,expiry_date,location,site,aisle,rack,unit_type')
                             .eq('session_id', sessionId)
                             .order('scanned_at', { ascending: false });
                         
@@ -1508,7 +1604,8 @@
                     }
                 };
                 runSync();
-                this.syncInterval = setInterval(runSync, 5000);
+                // Sync every 10 seconds instead of 5 to reduce load
+                this.syncInterval = setInterval(runSync, 10000);
             }
 
             stopAutoSync() {
@@ -2332,6 +2429,7 @@
             hideSettings() {
                 this.showingSettings = false;
                 this.showingStartStockTake = true;
+                this.refreshSessionsFromSupabase(); // Refresh sessions when returning to start screen
                 this.render();
             }
 
@@ -2344,6 +2442,7 @@
                 this.scans = [];
                 this.selectedStockTakeType = null;
                 this.showingStartStockTake = true;
+                this.refreshSessionsFromSupabase(); // Refresh sessions when going home
                 this.render();
             }
 
@@ -3032,7 +3131,29 @@
                 `;
             }
 
+            // Optimized render with debouncing to prevent excessive DOM updates
             render() {
+                // Skip if render is already scheduled
+                if (this._renderScheduled) return;
+                
+                // Debounce rapid render calls
+                const now = performance.now();
+                const timeSinceLastRender = now - this._lastRenderTime;
+                
+                if (timeSinceLastRender < this._renderDebounceMs) {
+                    this._renderScheduled = true;
+                    requestAnimationFrame(() => {
+                        this._renderScheduled = false;
+                        this._executeRender();
+                    });
+                    return;
+                }
+                
+                this._executeRender();
+            }
+            
+            _executeRender() {
+                this._lastRenderTime = performance.now();
                 this.renderModal();
                 const scrollY = window.scrollY;
                 const app = document.getElementById('app');
@@ -3051,9 +3172,7 @@
                 if (this.isScanning && document.getElementById('scanner-view')) {
                     return;
                 }
-                if (this.showingStartStockTake) {
-                    this.refreshSessionsFromSupabase();
-                }
+                // Note: Session refresh moved to explicit calls only to avoid blocking render
                 
                 // Start Stock Take Screen - Step 1: Type Selection
                 if (this.showingStartStockTake && !this.selectedStockTakeType) {
