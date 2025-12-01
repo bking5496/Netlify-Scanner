@@ -1,13 +1,13 @@
 # Stock Scanner Data Contract
 
-_Last updated: 2025-11-30_
+_Last updated: 2025-12-01_
 
-This document describes the persistent data model that backs the Stock Scanner PWA, including tables, helper functions, triggers, and access policies. Use it to understand how the web app, Supabase, and (legacy) Netlify/Neon deployments share and validate information.
+This document describes the persistent data model that backs the Stock Scanner PWA, including tables, helper functions, triggers, and access policies. Use it to understand how the web app and Supabase share and validate information.
 
 ## High-Level Architecture
 
 - **Primary store:** Supabase Postgres. The app talks directly to Supabase when credentials are provided.
-- **Fallbacks:** A Netlify Function + Neon database (legacy) or localStorage (offline). When Supabase connectivity exists, the client keeps an active heartbeat to ensure device presence and session metadata stay in sync server-side.
+- **Fallbacks:** localStorage (offline). When Supabase connectivity exists, the client keeps an active heartbeat to ensure device presence and session metadata stay in sync server-side.
 - **Auth:** Supabase JWTs may include an `app_role` claim. If absent, the backend looks up `app_roles` by `auth.uid()`; anonymous users default to `operator`.
 
 ## Tables

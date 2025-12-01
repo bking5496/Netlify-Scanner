@@ -1569,44 +1569,11 @@
                 }
             }
 
-            async ensureStockTake() {
-                if (!this.useNeonDB) return;
-                await db.insertStockTake(this.currentTakeDate);
-            }
-
             async loadScans() {
                 const sessionType = this.activeStockTake?.sessionType || 'FP';
                 const sessionId = this.activeStockTake?.id;
                 
-                if (this.useNeonDB) {
-                    const data = await db.getStockScans(this.currentTakeDate);
-                    
-                    this.scans = data
-                        .filter(row => !row.session_type || row.session_type === sessionType) // Filter by session type
-                        .map(row => ({
-                            id: row.id,
-                            timestamp: new Date(row.scanned_at).getTime(),
-                            date: new Date(row.scanned_at).toLocaleDateString(),
-                            time: new Date(row.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            raw: row.raw_code,
-                            batchNumber: row.batch_number,
-                            palletNumber: row.pallet_number,
-                            casesOnPallet: row.cases_on_pallet,
-                            actualCases: row.actual_cases,
-                            stockCode: row.stock_code,
-                            description: row.description,
-                            valid: true,
-                            deviceId: row.device_id,
-                            scannedBy: row.scanned_by || 'Unknown',
-                            sessionType: row.session_type || 'FP',
-                            expiryDate: row.expiry_date,
-                            location: row.location,
-                            site: row.site,
-                            aisle: row.aisle,
-                            rack: row.rack,
-                            unitType: row.unit_type || (sessionType === 'RM' ? getUnitTypeForStockCode(row.stock_code) : 'cases')
-                        }));
-                } else if (supabase && sessionId) {
+                if (supabase && sessionId) {
                     // Load ALL scans from stock_scans table, filtered by session
                     try {
                         // Only select fields we actually need for display
@@ -1664,7 +1631,7 @@
 
             startAutoSync() {
                 this.stopAutoSync();
-                const canSync = this.useNeonDB || (supabaseSessionsEnabled && this.activeStockTake?.id);
+                const canSync = supabaseSessionsEnabled && this.activeStockTake?.id;
                 if (!canSync) {
                     return;
                 }
@@ -1673,9 +1640,7 @@
                     
                     try {
                         // Always sync data from database - this keeps data in sync
-                        if (this.useNeonDB) {
-                            await this.loadScans();
-                        } else if (supabaseSessionsEnabled && this.activeStockTake?.id) {
+                        if (supabaseSessionsEnabled && this.activeStockTake?.id) {
                             await this.refreshSessionsFromSupabase();
                             await this.loadScans();
                         }
@@ -1932,9 +1897,7 @@
             }
 
             async checkDuplicate(batchNumber, palletNumber, stockCode = null, expiryDate = null) {
-                if (this.useNeonDB) {
-                    return await db.checkDuplicate(this.currentTakeDate, batchNumber, palletNumber);
-                } else if (supabase && this.activeStockTake?.id) {
+                if (supabase && this.activeStockTake?.id) {
                     // Live check against Supabase stock_scans for all devices in this session
                     const sessionType = this.activeStockTake?.sessionType || 'FP';
                     return await checkDuplicateInSupabase(
@@ -2373,40 +2336,15 @@
                 // Check if this is an update to an existing pallet scan
                 const isUpdate = parsedData.isDuplicatePallet && parsedData.existingScanId;
                 
-                console.log('Saving scan:', { parsedData, actualCases, userName, useNeonDB: this.useNeonDB, isGitHubPages: this.isGitHubPages, sessionType, sessionId, supabaseEnabled: !!supabase, isUpdate });
+                console.log('Saving scan:', { parsedData, actualCases, userName, sessionType, sessionId, supabaseEnabled: !!supabase, isUpdate });
                 
                 // Check if we have a valid session for Supabase saves
-                if (!this.useNeonDB && supabase && !sessionId) {
+                if (supabase && !sessionId) {
                     console.warn('No active session ID - scan will be saved to localStorage only');
                     alert('No active session. Please start or join a session first. Scan saved locally.');
                 }
                 
-                if (this.useNeonDB) {
-                    const result = await db.insertStockScan({
-                        take_date: this.currentTakeDate,
-                        batch_number: parsedData.batchNumber,
-                        pallet_number: parsedData.palletNumber,
-                        cases_on_pallet: parsedData.casesOnPallet,
-                        actual_cases: actualCases,
-                        stock_code: parsedData.stockCode,
-                        description: parsedData.description,
-                        raw_code: parsedData.raw,
-                        device_id: DEVICE_ID,
-                        scanned_by: userName,
-                        session_type: sessionType,
-                        expiry_date: parsedData.expiryDate || null,
-                        location: locationPayload.location,
-                        site: locationPayload.site,
-                        aisle: locationPayload.aisle,
-                        rack: locationPayload.rack,
-                        unit_type: parsedData.unitType || (sessionType === 'RM' ? getUnitTypeForStockCode(parsedData.stockCode) : 'cases')
-                    });
-                    if (!result) {
-                        await logClientEvent('scan-insert-failed', 'error', sessionId, { transport: 'netlify', batch: parsedData.batchNumber });
-                        throw new Error('Failed to insert scan via Netlify Functions');
-                    }
-                    console.log('Insert result:', result);
-                } else if (supabase && sessionId) {
+                if (supabase && sessionId) {
                     // Handle UPDATE for duplicate pallet
                     if (isUpdate) {
                         console.log('Updating existing pallet scan:', parsedData.existingScanId);
@@ -2552,9 +2490,7 @@
                 
                 if (!confirmed) return;
                 
-                if (this.useNeonDB) {
-                    await db.deleteStockScan(id);
-                } else if (supabase) {
+                if (supabase) {
                     // Delete from stock_scans table
                     try {
                         const { error } = await supabase
@@ -3145,12 +3081,11 @@
                 const connected = await db.init();
                 
                 if (connected) {
-                    await this.ensureStockTake();
                     await this.loadScans();
                     if (!this.syncInterval) {
                         this.startAutoSync();
                     }
-                    const modeLabel = db.mode === 'supabase' ? 'Supabase' : (db.mode === 'netlify' ? 'Neon DB' : 'local cache');
+                    const modeLabel = db.mode === 'supabase' ? 'Supabase' : 'local cache';
                     if (db.mode === 'localStorage') {
                         alert('Connected in offline mode. Data will sync once Supabase is reachable.');
                     } else {
@@ -3874,11 +3809,6 @@
                                     <div class="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100">
                                         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                                         <span>Connected to Supabase</span>
-                                    </div>
-                                ` : this.useNeonDB ? `
-                                    <div class="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100">
-                                        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                        <span>Connected to Neon DB</span>
                                     </div>
                                 ` : `
                                     <div class="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-bold border border-slate-200">
@@ -4776,18 +4706,8 @@
                                             Connection Status
                                         </label>
                                         ${(() => {
-                                            const mode = this.useNeonDB ? 'netlify' : (this.usingSupabaseDB ? 'supabase' : 'offline');
+                                            const mode = this.usingSupabaseDB ? 'supabase' : 'offline';
                                             const configs = {
-                                                netlify: {
-                                                    border: 'border-emerald-200 bg-emerald-50',
-                                                    dot: 'bg-emerald-500',
-                                                    title: 'Connected to Neon DB',
-                                                    titleClass: 'text-emerald-800',
-                                                    subtitle: 'Data is syncing through Netlify Functions',
-                                                    subtitleClass: 'text-emerald-600',
-                                                    note: null,
-                                                    noteClass: ''
-                                                },
                                                 supabase: {
                                                     border: 'border-blue-200 bg-blue-50',
                                                     dot: 'bg-blue-500',
@@ -4985,13 +4905,6 @@
                                     ` : '';
                                 })()}
                             </div>
-                            
-                            ${this.useNeonDB ? `
-                                <div class="mt-3 flex items-center justify-center gap-2 text-xs font-medium text-emerald-600 bg-emerald-50/50 py-1.5 rounded-lg border border-emerald-100/50">
-                                    <div class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                                    <span>Live Sync Active</span>
-                                </div>
-                            ` : ''}
                             
                             ${this.sessionSettings.locationScanningEnabled ? `
                                 <button onclick="app.promptForLocation()" class="mt-3 w-full flex items-center justify-center gap-2 text-xs font-medium ${this.sessionSettings.currentLocation ? 'text-blue-600 bg-blue-50/50 border-blue-100/50' : 'text-slate-500 bg-slate-50/50 border-slate-200/50'} py-2 rounded-lg border">

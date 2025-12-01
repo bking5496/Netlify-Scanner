@@ -1,8 +1,5 @@
 {
   "name": "stock-scanner",
   "version": "1.0.0",
-  "description": "Stock Scanner PWA with Neon DB",
-  "dependencies": {
-    "@neondatabase/serverless": "^0.9.0"
-  }
+  "description": "Stock Scanner PWA with Supabase"
 }
