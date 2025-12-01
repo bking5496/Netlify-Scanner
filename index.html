@@ -1488,6 +1488,50 @@
                 await finalizeDeviceWrapUp();
             }
 
+            async endSessionFromList(sessionId) {
+                // End a session from the session selection list
+                this.showModal({
+                    title: 'End Session',
+                    message: 'Are you sure you want to end this session? All active devices will be marked as completed.',
+                    type: 'confirm',
+                    confirmText: 'End Session',
+                    cancelText: 'Cancel',
+                    onConfirm: async () => {
+                        try {
+                            if (supabaseSessionsEnabled && supabase) {
+                                // Update session status in Supabase
+                                const { error } = await supabase
+                                    .from('stock_sessions')
+                                    .update({ 
+                                        status: 'completed',
+                                        ended_at: new Date().toISOString()
+                                    })
+                                    .eq('id', sessionId);
+                                
+                                if (error) {
+                                    console.error('Error ending session:', error);
+                                    alert('Failed to end session. Please try again.');
+                                    return;
+                                }
+                            }
+                            
+                            // Update local storage
+                            const sessionDate = this.currentTakeDate;
+                            await updateSession(sessionDate, sessionId, { status: 'completed' });
+                            
+                            // Refresh the session list
+                            await this.refreshSessionsFromSupabase();
+                            this.render();
+                            
+                            alert('Session ended successfully.');
+                        } catch (err) {
+                            console.error('Error ending session:', err);
+                            alert('Failed to end session. Please try again.');
+                        }
+                    }
+                });
+            }
+
             async ensureStockTake() {
                 if (!this.useNeonDB) return;
                 await db.insertStockTake(this.currentTakeDate);
@@ -1589,8 +1633,9 @@
                 }
                 const runSync = async () => {
                     if (!this.isBrowserOnline) return;
-                    // Don't reload/re-render during case entry to avoid losing input
+                    // Don't reload/re-render during case entry or modal input to avoid losing input
                     if (this.showingCaseEntry) return;
+                    if (this.modalState) return; // Skip sync while modal is open
                     
                     try {
                         if (this.useNeonDB) {
@@ -2467,64 +2512,72 @@
                 const sessionType = this.activeStockTake?.sessionType || 'FP';
                 
                 if (sessionType === 'FP') {
-                    // FP: Allow entering 5-digit batch code to lookup product
+                    // FP: Allow entering 13-digit full code OR 5-digit batch code
                     this.showModal({
-                        title: 'Enter Batch Code',
-                        message: 'Enter the 5-digit batch number:',
+                        title: 'Type Code',
+                        message: 'Enter 13-digit barcode OR 5-digit batch number:',
                         type: 'input',
-                        confirmText: 'Lookup',
+                        confirmText: 'Process',
                         onConfirm: (data) => {
-                            const batchCode = (data.value || '').trim();
-                            if (!batchCode) return;
+                            const code = (data.value || '').trim();
+                            if (!code) return;
                             
-                            // Validate it's 5 digits
-                            if (!/^\d{5}$/.test(batchCode)) {
-                                alert('Please enter exactly 5 digits for the batch code');
+                            // Check if it's a full 13-digit code
+                            if (/^\d{13}$/.test(code)) {
+                                // Process as normal barcode
+                                this.onScanSuccess(code);
                                 return;
                             }
                             
-                            // Lookup product in database
-                            const productInfo = productDatabase[batchCode];
-                            if (!productInfo || productInfo.stockCode === 'UNKNOWN') {
-                                alert(`Product not found for batch code: ${batchCode}\n\nPlease check the code or add it to the product database.`);
-                                return;
-                            }
-                            
-                            // Product found - now ask for number of cases
-                            this.showModal({
-                                title: 'Enter Case Count',
-                                message: `Product: ${productInfo.stockCode}\n${productInfo.description}\n\nEnter number of cases:`,
-                                type: 'input',
-                                confirmText: 'Confirm',
-                                onConfirm: (caseData) => {
-                                    const cases = parseInt(caseData.value, 10);
-                                    if (isNaN(cases) || cases < 0) {
-                                        alert('Please enter a valid number of cases');
-                                        return;
-                                    }
-                                    
-                                    // Create a manual entry scan object
-                                    const manualScan = {
-                                        valid: true,
-                                        raw: `MANUAL:${batchCode}`,
-                                        batchNumber: batchCode,
-                                        palletNumber: 'MANUAL',
-                                        casesOnPallet: cases,
-                                        stockCode: productInfo.stockCode,
-                                        description: productInfo.description,
-                                        isManualEntry: true
-                                    };
-                                    
-                                    // Save the scan directly
-                                    this.saveScan(manualScan, cases).then(() => {
-                                        // Show success feedback
-                                        if (navigator.vibrate) navigator.vibrate(200);
-                                    }).catch(err => {
-                                        console.error('Failed to save manual entry:', err);
-                                        alert('Failed to save. Please try again.');
-                                    });
+                            // Check if it's a 5-digit batch code
+                            if (/^\d{5}$/.test(code)) {
+                                // Lookup product in database
+                                const productInfo = productDatabase[code];
+                                if (!productInfo || productInfo.stockCode === 'UNKNOWN') {
+                                    alert(`Product not found for batch code: ${code}\n\nPlease check the code or add it to the product database.`);
+                                    return;
                                 }
-                            });
+                                
+                                // Product found - now ask for number of cases
+                                this.showModal({
+                                    title: 'Enter Case Count',
+                                    message: `Product: ${productInfo.stockCode}\n${productInfo.description}\n\nEnter number of cases:`,
+                                    type: 'input',
+                                    confirmText: 'Save',
+                                    onConfirm: (caseData) => {
+                                        const cases = parseInt(caseData.value, 10);
+                                        if (isNaN(cases) || cases < 0) {
+                                            alert('Please enter a valid number of cases');
+                                            return;
+                                        }
+                                        
+                                        // Create a manual entry scan object
+                                        const manualScan = {
+                                            valid: true,
+                                            raw: `MANUAL:${code}`,
+                                            batchNumber: code,
+                                            palletNumber: 'MANUAL',
+                                            casesOnPallet: cases,
+                                            stockCode: productInfo.stockCode,
+                                            description: productInfo.description,
+                                            isManualEntry: true
+                                        };
+                                        
+                                        // Save the scan directly
+                                        this.saveScan(manualScan, cases).then(() => {
+                                            // Show success feedback
+                                            if (navigator.vibrate) navigator.vibrate(200);
+                                        }).catch(err => {
+                                            console.error('Failed to save manual entry:', err);
+                                            alert('Failed to save. Please try again.');
+                                        });
+                                    }
+                                });
+                                return;
+                            }
+                            
+                            // Invalid format
+                            alert('Please enter either:\n• 13 digits (full barcode)\n• 5 digits (batch code only)');
                         }
                     });
                 } else {
@@ -3430,7 +3483,7 @@
                     const activeSessions = getActiveSessionsForDate(this.currentTakeDate).filter(s => s.sessionType === sessionType);
                     
                     updateView(`
-                        <div class="min-h-screen flex flex-col bg-white">
+                        <div class="min-h-screen flex flex-col bg-white pb-24">
                             <!-- Header -->
                             <div class="p-4 border-b border-slate-100">
                                 <div class="max-w-2xl mx-auto">
@@ -3473,11 +3526,10 @@
                                             ${activeSessions.map(session => {
                                                 const activeCount = session.devices?.filter(d => d.status === 'active').length || 0;
                                                 const completedCount = session.devices?.filter(d => d.status === 'completed').length || 0;
+                                                const sessionDate = session.startedAt ? new Date(session.startedAt).toLocaleDateString() : session.date || '';
+                                                const sessionTime = session.startedAt ? new Date(session.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
                                                 return `
-                                                    <button 
-                                                        onclick="app.joinExistingSession('${session.id}', '${savedName}')"
-                                                        class="w-full p-4 border-2 ${isRM ? 'border-teal-200 hover:border-teal-400 hover:bg-teal-50' : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'} rounded-2xl transition-all text-left"
-                                                    >
+                                                    <div class="p-4 border-2 ${isRM ? 'border-teal-200' : 'border-blue-200'} rounded-2xl">
                                                         <div class="flex items-center justify-between mb-2">
                                                             <div class="flex items-center gap-2">
                                                                 <span class="px-3 py-1 text-sm font-bold ${isRM ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'} rounded-full">
@@ -3485,11 +3537,8 @@
                                                                 </span>
                                                                 <span class="text-slate-600">by ${session.startedBy}</span>
                                                             </div>
-                                                            <svg class="w-5 h-5 ${isRM ? 'text-teal-400' : 'text-blue-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                                            </svg>
                                                         </div>
-                                                        <div class="flex items-center gap-4 text-sm">
+                                                        <div class="flex items-center gap-4 text-sm mb-3">
                                                             <div class="flex items-center gap-1 text-emerald-600">
                                                                 <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                                                                 <span>${activeCount} active</span>
@@ -3502,22 +3551,30 @@
                                                                     <span>${completedCount} done</span>
                                                                 </div>
                                                             ` : ''}
-                                                            <div class="text-slate-400">
-                                                                ${new Date(session.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            <div class="flex items-center gap-1 text-slate-400">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                                </svg>
+                                                                <span>${sessionDate} ${sessionTime}</span>
                                                             </div>
                                                         </div>
-                                                    </button>
+                                                        <div class="flex gap-2">
+                                                            <button 
+                                                                onclick="app.joinExistingSession('${session.id}', '${savedName}')"
+                                                                class="flex-1 py-2 px-4 ${isRM ? 'bg-teal-600 hover:bg-teal-700' : 'bg-blue-600 hover:bg-blue-700'} text-white font-bold rounded-xl transition-colors text-sm"
+                                                            >
+                                                                Join Session
+                                                            </button>
+                                                            <button 
+                                                                onclick="app.endSessionFromList('${session.id}')"
+                                                                class="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors text-sm"
+                                                            >
+                                                                End
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 `;
                                             }).join('')}
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="relative mb-6">
-                                        <div class="absolute inset-0 flex items-center">
-                                            <div class="w-full border-t border-slate-200"></div>
-                                        </div>
-                                        <div class="relative flex justify-center text-sm">
-                                            <span class="px-4 bg-white text-slate-500 font-medium">or</span>
                                         </div>
                                     </div>
                                 ` : `
@@ -3529,23 +3586,23 @@
                                         <p class="text-xs sm:text-sm text-slate-400">Start a new session below</p>
                                     </div>
                                 `}
-                                
-                                <!-- Start New Session -->
-                                <button 
-                                    onclick="app.startNewStockTake('${savedName}', '${sessionType}')"
-                                    class="w-full ${isRM ? 'bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 shadow-teal-200' : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-blue-200'} text-white p-4 sm:p-5 rounded-xl sm:rounded-2xl text-base sm:text-lg font-bold shadow-lg transition-all flex items-center justify-center gap-2 sm:gap-3"
-                                >
-                                    <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                    </svg>
-                                    Start New ${isRM ? 'RM' : 'FP'} Session
-                                </button>
                                 </div>
                             </div>
                             
                             <div class="p-4 sm:p-6 text-center border-t border-slate-100">
                                 <p class="text-xs text-slate-400">${this.currentTakeDate}</p>
                             </div>
+                            
+                            <!-- Floating Start New Session Button - Bottom Right -->
+                            <button 
+                                onclick="app.startNewStockTake('${savedName}', '${sessionType}')"
+                                class="fixed bottom-6 right-6 ${isRM ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'} text-white px-5 py-3 rounded-full shadow-xl transition-all flex items-center gap-2 font-bold text-sm z-40"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                New Session
+                            </button>
                         </div>
                     `);
                     return;
