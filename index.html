@@ -3169,130 +3169,275 @@
                 });
             }
             
-            // Quick add unknown scanned item to database
+            // Quick add unknown scanned item to database - shows scan popup for stock code
             addScannedItemToDatabase(scan) {
                 const isRM = scan.sessionType === 'RM';
                 
-                if (isRM) {
-                    // Add Raw Material
-                    this.showModal({
-                        title: 'Add Raw Material to Database',
-                        message: `Add "${scan.stockCode}" to the raw materials database`,
-                        type: 'form',
-                        fields: [
-                            { name: 'stockCode', label: 'Stock Code', value: scan.stockCode || '', placeholder: 'Stock code', required: true, scannable: true },
-                            { name: 'description', label: 'Description', value: '', placeholder: 'Material description', required: true },
-                            { name: 'batchNumber', label: 'Batch Number', value: scan.batchNumber || '', placeholder: 'Batch number', required: false },
-                            { name: 'expiryDate', label: 'Expiry Date', value: scan.expiryDate || '', type: 'date', required: false }
-                        ],
-                        confirmText: 'Add to Database',
-                        onConfirm: async (data) => {
-                            const { stockCode, description, batchNumber, expiryDate } = data;
-                            
-                            if (!stockCode || !description) {
-                                alert('Stock code and description are required');
-                                return;
-                            }
-                            
-                            // Add to local database
-                            if (!rawMaterialsDatabase[stockCode]) {
-                                rawMaterialsDatabase[stockCode] = { description, batches: {} };
-                            }
-                            rawMaterialsDatabase[stockCode].description = description;
-                            if (batchNumber) {
-                                if (!rawMaterialsDatabase[stockCode].batches) {
-                                    rawMaterialsDatabase[stockCode].batches = {};
-                                }
-                                rawMaterialsDatabase[stockCode].batches[batchNumber] = { 
-                                    expiryDates: expiryDate ? [expiryDate] : [] 
-                                };
-                            }
-                            
-                            saveRawMaterialsDatabase();
-                            
-                            // Add to Supabase
-                            const success = await addRawMaterialToSupabase(stockCode, description, batchNumber, expiryDate);
-                            
-                            if (success) {
-                                // Update the scan's description in memory
-                                const scanIndex = this.scans.findIndex(s => s.id === scan.id);
-                                if (scanIndex >= 0) {
-                                    this.scans[scanIndex].description = description;
-                                }
+                // Show a simple popup with X close and Scan button
+                const popup = document.createElement('div');
+                popup.id = 'add-to-db-popup';
+                popup.innerHTML = `
+                    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+                            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                                <h3 class="text-lg font-bold text-slate-900">Add to Database</h3>
+                                <button onclick="document.getElementById('add-to-db-popup').remove()" class="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                                    <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="p-6">
+                                <div class="text-center mb-6">
+                                    <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg class="w-8 h-8 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                                        </svg>
+                                    </div>
+                                    <p class="text-slate-900 font-medium mb-1">Unknown ${isRM ? 'Material' : 'Product'}</p>
+                                    <p class="text-slate-500 text-sm">Batch: <span class="font-mono font-bold">${scan.batchNumber || 'N/A'}</span></p>
+                                </div>
                                 
-                                this.showModal({
-                                    title: 'Success',
-                                    message: `"${stockCode}" added to raw materials database!`,
-                                    type: 'alert'
-                                });
-                                this.render();
-                            } else {
-                                alert('Failed to add to database. Please try again.');
+                                <button onclick="app.scanStockCodeForProduct('${scan.id}', ${isRM})" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-3">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                    </svg>
+                                    Scan Stock Code
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(popup);
+            }
+            
+            // Scan stock code and add product to database
+            async scanStockCodeForProduct(scanId, isRM) {
+                // Close the popup
+                const popup = document.getElementById('add-to-db-popup');
+                if (popup) popup.remove();
+                
+                // Find the scan
+                const scan = this.scans.find(s => s.id === scanId);
+                if (!scan) {
+                    alert('Scan not found');
+                    return;
+                }
+                
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: 'environment' } 
+                    });
+                    
+                    // Create scanner overlay
+                    const overlay = document.createElement('div');
+                    overlay.id = 'stock-code-scanner';
+                    overlay.innerHTML = `
+                        <div class="fixed inset-0 bg-black z-[10000] flex flex-col">
+                            <div class="bg-black/80 p-4 flex items-center justify-between">
+                                <span class="text-white font-bold">Scan Stock Code</span>
+                                <button onclick="app.cancelStockCodeScan()" class="text-white p-2 hover:bg-white/10 rounded-full">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="flex-1 relative">
+                                <video id="stock-code-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div class="w-64 h-32 border-2 border-white/50 rounded-lg relative">
+                                        <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
+                                        <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
+                                        <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
+                                        <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-black/80 p-4 text-center text-white text-sm">
+                                Point camera at the stock code barcode
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                    
+                    const video = document.getElementById('stock-code-video');
+                    video.srcObject = stream;
+                    
+                    this._stockCodeScannerStream = stream;
+                    this._stockCodeScanData = { scanId, isRM, scan };
+                    
+                    // Use BarcodeDetector if available
+                    if ('BarcodeDetector' in window) {
+                        const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code'] });
+                        
+                        const scanFrame = async () => {
+                            if (!this._stockCodeScannerStream) return;
+                            
+                            try {
+                                const barcodes = await detector.detect(video);
+                                if (barcodes.length > 0) {
+                                    const stockCode = barcodes[0].rawValue;
+                                    this.finishStockCodeScan(stockCode);
+                                    return;
+                                }
+                            } catch (err) {
+                                // Ignore detection errors
                             }
+                            
+                            if (this._stockCodeScannerStream) {
+                                requestAnimationFrame(scanFrame);
+                            }
+                        };
+                        
+                        video.onloadedmetadata = () => {
+                            video.play();
+                            requestAnimationFrame(scanFrame);
+                        };
+                    } else {
+                        // Fallback: prompt for manual entry
+                        this.cancelStockCodeScan();
+                        const stockCode = prompt('BarcodeDetector not supported. Please enter the stock code manually:');
+                        if (stockCode) {
+                            this.processStockCodeScan(stockCode, scan, isRM);
                         }
+                    }
+                } catch (err) {
+                    console.error('Camera access failed:', err);
+                    alert('Could not access camera. Please check permissions.');
+                }
+            }
+            
+            finishStockCodeScan(stockCode) {
+                // Stop scanner
+                if (this._stockCodeScannerStream) {
+                    this._stockCodeScannerStream.getTracks().forEach(track => track.stop());
+                    this._stockCodeScannerStream = null;
+                }
+                
+                // Remove overlay
+                const overlay = document.getElementById('stock-code-scanner');
+                if (overlay) overlay.remove();
+                
+                // Process the scanned stock code
+                const { scan, isRM } = this._stockCodeScanData || {};
+                if (scan && stockCode) {
+                    this.processStockCodeScan(stockCode, scan, isRM);
+                }
+                
+                this._stockCodeScanData = null;
+            }
+            
+            cancelStockCodeScan() {
+                // Stop scanner
+                if (this._stockCodeScannerStream) {
+                    this._stockCodeScannerStream.getTracks().forEach(track => track.stop());
+                    this._stockCodeScannerStream = null;
+                }
+                
+                // Remove overlay
+                const overlay = document.getElementById('stock-code-scanner');
+                if (overlay) overlay.remove();
+                
+                this._stockCodeScanData = null;
+            }
+            
+            async processStockCodeScan(stockCode, scan, isRM) {
+                // Look up the stock code in the database to get description
+                let description = '';
+                
+                if (isRM) {
+                    // Check RM database
+                    if (rawMaterialsDatabase[stockCode]) {
+                        description = rawMaterialsDatabase[stockCode].description || '';
+                    }
+                } else {
+                    // Check FP database - look for any product with this stock code
+                    for (const [batch, info] of Object.entries(productDatabase)) {
+                        if (info.stockCode === stockCode) {
+                            description = info.description || '';
+                            break;
+                        }
+                    }
+                }
+                
+                // If no description found, prompt for it
+                if (!description) {
+                    description = prompt(`Enter description for ${stockCode}:`);
+                    if (!description) {
+                        alert('Description is required');
+                        return;
+                    }
+                }
+                
+                // Add to database
+                if (isRM) {
+                    // Add to RM database
+                    if (!rawMaterialsDatabase[stockCode]) {
+                        rawMaterialsDatabase[stockCode] = { description, batches: {} };
+                    }
+                    rawMaterialsDatabase[stockCode].description = description;
+                    if (scan.batchNumber) {
+                        if (!rawMaterialsDatabase[stockCode].batches) {
+                            rawMaterialsDatabase[stockCode].batches = {};
+                        }
+                        rawMaterialsDatabase[stockCode].batches[scan.batchNumber] = { 
+                            expiryDates: scan.expiryDate ? [scan.expiryDate] : [] 
+                        };
+                    }
+                    saveRawMaterialsDatabase();
+                    
+                    // Add to Supabase
+                    await addRawMaterialToSupabase(stockCode, description, scan.batchNumber, scan.expiryDate);
+                    
+                    // Update the scan
+                    const scanIndex = this.scans.findIndex(s => s.id === scan.id);
+                    if (scanIndex >= 0) {
+                        this.scans[scanIndex].stockCode = stockCode;
+                        this.scans[scanIndex].description = description;
+                    }
+                    
+                    this.showModal({
+                        title: 'Success',
+                        message: `"${stockCode}" added to raw materials database!`,
+                        type: 'alert',
+                        confirmText: 'OK'
                     });
                 } else {
-                    // Add FP Product
-                    this.showModal({
-                        title: 'Add Product to Database',
-                        message: `Add batch "${scan.batchNumber}" to the products database`,
-                        type: 'form',
-                        fields: [
-                            { name: 'batchNumber', label: 'Batch Number', value: scan.batchNumber || '', placeholder: 'Batch number', required: true },
-                            { name: 'stockCode', label: 'Stock Code', value: scan.stockCode !== 'UNKNOWN' ? scan.stockCode : '', placeholder: 'Stock code', required: true, scannable: true },
-                            { name: 'description', label: 'Description', value: '', placeholder: 'Product description', required: true }
-                        ],
-                        confirmText: 'Add to Database',
-                        onConfirm: async (data) => {
-                            const { batchNumber, stockCode, description } = data;
-                            
-                            if (!batchNumber || !stockCode || !description) {
-                                alert('All fields are required');
-                                return;
-                            }
-                            
-                            // Add to local database
-                            productDatabase[batchNumber] = { stockCode, description };
-                            saveProductDatabase();
-                            
-                            // Add to Supabase
-                            if (supabase) {
-                                try {
-                                    const { error } = await supabase
-                                        .from('products')
-                                        .upsert({ 
-                                            batch_number: batchNumber,
-                                            stock_code: stockCode, 
-                                            description: description 
-                                        }, { onConflict: 'batch_number' });
-                                    
-                                    if (error) {
-                                        console.error('Failed to add product to Supabase:', error);
-                                        alert('Added locally but failed to sync to database.');
-                                        return;
-                                    }
-                                    
-                                    // Update the scan's description in memory
-                                    const scanIndex = this.scans.findIndex(s => s.id === scan.id);
-                                    if (scanIndex >= 0) {
-                                        this.scans[scanIndex].stockCode = stockCode;
-                                        this.scans[scanIndex].description = description;
-                                    }
-                                    
-                                    this.showModal({
-                                        title: 'Success',
-                                        message: `Product "${stockCode}" added to database!`,
-                                        type: 'alert'
-                                    });
-                                    this.render();
-                                } catch (err) {
-                                    console.error('Error adding product:', err);
-                                    alert('Added locally but failed to sync to database.');
-                                }
-                            }
+                    // Add to FP database
+                    productDatabase[scan.batchNumber] = { stockCode, description };
+                    saveProductDatabase();
+                    
+                    // Add to Supabase
+                    if (supabase) {
+                        try {
+                            await supabase
+                                .from('products')
+                                .upsert({ 
+                                    batch_number: scan.batchNumber,
+                                    stock_code: stockCode, 
+                                    description: description 
+                                }, { onConflict: 'batch_number' });
+                        } catch (err) {
+                            console.error('Error adding to Supabase:', err);
                         }
+                    }
+                    
+                    // Update the scan
+                    const scanIndex = this.scans.findIndex(s => s.id === scan.id);
+                    if (scanIndex >= 0) {
+                        this.scans[scanIndex].stockCode = stockCode;
+                        this.scans[scanIndex].description = description;
+                    }
+                    
+                    this.showModal({
+                        title: 'Success',
+                        message: `Product "${stockCode}" added to database!`,
+                        type: 'alert',
+                        confirmText: 'OK'
                     });
                 }
+                
+                this.render();
             }
             
             addProductType() {
@@ -3674,199 +3819,6 @@
                 this.render();
             }
 
-            // Scan QR code to fill a modal form field
-            async scanForModalField(fieldName) {
-                // Store the current modal state so we can restore it after scanning
-                const savedModalState = { ...this.modalState };
-                
-                // Get current form values to preserve them
-                const currentFormValues = {};
-                if (savedModalState.fields) {
-                    savedModalState.fields.forEach(field => {
-                        const input = document.getElementById(`modal-field-${field.name}`);
-                        if (input) {
-                            currentFormValues[field.name] = field.type === 'checkbox' ? input.checked : input.value;
-                        }
-                    });
-                }
-                
-                // Save state for cancel restoration
-                const stateForCancel = { ...savedModalState };
-                stateForCancel.fields = savedModalState.fields.map(field => ({
-                    ...field,
-                    value: currentFormValues[field.name] !== undefined ? currentFormValues[field.name] : field.value
-                }));
-                this._savedModalStateForScan = stateForCancel;
-                
-                // Close modal temporarily
-                this.modalState = null;
-                this.renderModal();
-                
-                // Start scanning with a callback
-                this._modalFieldScanCallback = (scannedValue) => {
-                    // Update the saved field value
-                    if (savedModalState.fields) {
-                        savedModalState.fields = savedModalState.fields.map(field => ({
-                            ...field,
-                            value: field.name === fieldName ? scannedValue : (currentFormValues[field.name] || field.value)
-                        }));
-                    }
-                    
-                    // Restore the modal
-                    this.modalState = savedModalState;
-                    this.renderModal();
-                    this._modalFieldScanCallback = null;
-                };
-                
-                // Start scanning - use simple barcode scan
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: 'environment' } 
-                    });
-                    
-                    // Create a temporary scanner overlay
-                    const overlay = document.createElement('div');
-                    overlay.id = 'modal-field-scanner';
-                    overlay.innerHTML = `
-                        <div class="fixed inset-0 bg-black z-[10000] flex flex-col">
-                            <div class="bg-black/80 p-4 flex items-center justify-between">
-                                <span class="text-white font-bold">Scan Stock Code</span>
-                                <button onclick="app.cancelModalFieldScan()" class="text-white p-2">
-                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                </button>
-                            </div>
-                            <div class="flex-1 relative">
-                                <video id="modal-scanner-video" class="w-full h-full object-cover" autoplay playsinline></video>
-                                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div class="w-64 h-32 border-2 border-white/50 rounded-lg">
-                                        <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
-                                        <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
-                                        <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
-                                        <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="bg-black/80 p-4 text-center text-white text-sm">
-                                Point camera at the stock code barcode
-                            </div>
-                        </div>
-                    `;
-                    document.body.appendChild(overlay);
-                    
-                    const video = document.getElementById('modal-scanner-video');
-                    video.srcObject = stream;
-                    
-                    this._modalScannerStream = stream;
-                    
-                    // Use BarcodeDetector if available
-                    if ('BarcodeDetector' in window) {
-                        const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code'] });
-                        
-                        const scanFrame = async () => {
-                            if (!this._modalScannerStream) return;
-                            
-                            try {
-                                const barcodes = await detector.detect(video);
-                                if (barcodes.length > 0) {
-                                    const scannedValue = barcodes[0].rawValue;
-                                    this.finishModalFieldScan(scannedValue);
-                                    return;
-                                }
-                            } catch (err) {
-                                // Ignore detection errors
-                            }
-                            
-                            if (this._modalScannerStream) {
-                                requestAnimationFrame(scanFrame);
-                            }
-                        };
-                        
-                        // Start scanning after video is playing
-                        video.onloadedmetadata = () => {
-                            video.play();
-                            requestAnimationFrame(scanFrame);
-                        };
-                    } else {
-                        // Fallback: prompt for manual entry
-                        this.cancelModalFieldScan();
-                        const value = prompt('BarcodeDetector not supported. Please enter the stock code manually:');
-                        if (value && this._modalFieldScanCallback) {
-                            this._modalFieldScanCallback(value);
-                        } else if (this._modalFieldScanCallback) {
-                            // Restore modal with original values
-                            savedModalState.fields = savedModalState.fields.map(field => ({
-                                ...field,
-                                value: currentFormValues[field.name] || field.value
-                            }));
-                            this.modalState = savedModalState;
-                            this.renderModal();
-                            this._modalFieldScanCallback = null;
-                        }
-                    }
-                } catch (err) {
-                    console.error('Camera access failed:', err);
-                    // Restore modal
-                    savedModalState.fields = savedModalState.fields.map(field => ({
-                        ...field,
-                        value: currentFormValues[field.name] || field.value
-                    }));
-                    this.modalState = savedModalState;
-                    this.renderModal();
-                    this._modalFieldScanCallback = null;
-                    alert('Could not access camera. Please enter the value manually.');
-                }
-            }
-            
-            finishModalFieldScan(scannedValue) {
-                // Stop the scanner
-                if (this._modalScannerStream) {
-                    this._modalScannerStream.getTracks().forEach(track => track.stop());
-                    this._modalScannerStream = null;
-                }
-                
-                // Remove overlay
-                const overlay = document.getElementById('modal-field-scanner');
-                if (overlay) overlay.remove();
-                
-                // Clear saved state
-                this._savedModalStateForScan = null;
-                
-                // Call the callback with the scanned value
-                if (this._modalFieldScanCallback) {
-                    this._modalFieldScanCallback(scannedValue);
-                }
-            }
-            
-            cancelModalFieldScan() {
-                // Stop the scanner
-                if (this._modalScannerStream) {
-                    this._modalScannerStream.getTracks().forEach(track => track.stop());
-                    this._modalScannerStream = null;
-                }
-                
-                // Remove overlay
-                const overlay = document.getElementById('modal-field-scanner');
-                if (overlay) overlay.remove();
-                
-                // Restore the modal with original values (pass null to indicate cancellation)
-                if (this._modalFieldScanCallback) {
-                    // Get the saved modal state and restore it
-                    // We stored currentFormValues in the callback closure, so just call with original value
-                    const input = document.getElementById('modal-field-scanner');
-                    // Actually, we need to store the saved state separately
-                }
-                
-                // Restore saved modal state if available
-                if (this._savedModalStateForScan) {
-                    this.modalState = this._savedModalStateForScan;
-                    this._savedModalStateForScan = null;
-                    this._modalFieldScanCallback = null;
-                    this.renderModal();
-                }
-            }
-
             handleModalSubmit(e) {
                 e.preventDefault();
                 if (!this.modalState) return;
@@ -3924,23 +3876,6 @@
                                     <input type="checkbox" id="modal-field-${field.name}" ${field.value ? 'checked' : ''} class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
                                     <span class="text-slate-700 font-medium">${field.placeholder || ''}</span>
                                 </label>
-                            ` : field.scannable ? `
-                                <div class="flex gap-2">
-                                    <input 
-                                        type="${field.type || 'text'}" 
-                                        id="modal-field-${field.name}" 
-                                        value="${field.value || ''}" 
-                                        class="flex-1 px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 outline-none transition-all" 
-                                        placeholder="${field.placeholder || ''}"
-                                        ${field.required ? 'required' : ''}
-                                    >
-                                    <button type="button" onclick="app.scanForModalField('${field.name}')" class="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex items-center gap-2">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
-                                        </svg>
-                                        <span class="hidden sm:inline">Scan</span>
-                                    </button>
-                                </div>
                             ` : `
                                 <input 
                                     type="${field.type || 'text'}" 
