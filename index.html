@@ -2290,13 +2290,15 @@
             async loadAvailableSessions() {
                 // Get all unique sessions from localStorage
                 const allSessions = [];
+                const seenSessionIds = new Set();
                 
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key && key.startsWith('stocktake_')) {
                         try {
                             const session = JSON.parse(localStorage.getItem(key));
-                            if (session && session.id) {
+                            if (session && session.id && !seenSessionIds.has(session.id)) {
+                                seenSessionIds.add(session.id);
                                 allSessions.push({
                                     id: session.id,
                                     date: session.date,
@@ -2313,6 +2315,41 @@
                     }
                 }
                 
+                // Also load sessions from Supabase if available
+                if (supabase && this.isBrowserOnline) {
+                    try {
+                        // Get distinct sessions from stock_scans table
+                        const { data, error } = await supabase
+                            .from('stock_scans')
+                            .select('session_id, session_type, scanned_at, device_id')
+                            .order('scanned_at', { ascending: false });
+                        
+                        if (!error && data) {
+                            // Group by session_id to get unique sessions
+                            const sessionMap = new Map();
+                            data.forEach(scan => {
+                                if (scan.session_id && !sessionMap.has(scan.session_id) && !seenSessionIds.has(scan.session_id)) {
+                                    const scanDate = new Date(scan.scanned_at);
+                                    sessionMap.set(scan.session_id, {
+                                        id: scan.session_id,
+                                        date: scanDate.toLocaleDateString('en-CA'),
+                                        sessionType: scan.session_type || 'FP',
+                                        device: scan.device_id || 'Unknown',
+                                        startTime: scanDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                        status: 'completed'
+                                    });
+                                    seenSessionIds.add(scan.session_id);
+                                }
+                            });
+                            
+                            // Add Supabase sessions to the list
+                            sessionMap.forEach(session => allSessions.push(session));
+                        }
+                    } catch (e) {
+                        console.error('Error loading sessions from Supabase:', e);
+                    }
+                }
+                
                 // Sort by date descending
                 allSessions.sort((a, b) => {
                     const dateCompare = (b.date || '').localeCompare(a.date || '');
@@ -2321,6 +2358,7 @@
                 });
                 
                 this.historySessions = allSessions;
+                this.render(); // Re-render after loading sessions
             }
 
             async loadSessionHistory(sessionId) {
