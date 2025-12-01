@@ -1491,6 +1491,9 @@
                 }
                 const runSync = async () => {
                     if (!this.isBrowserOnline) return;
+                    // Don't reload/re-render during case entry to avoid losing input
+                    if (this.showingCaseEntry) return;
+                    
                     try {
                         if (this.useNeonDB) {
                             await this.loadScans();
@@ -2024,6 +2027,25 @@
             }
 
             async deleteScan(id) {
+                // Find the scan to show in confirmation
+                const scan = this.scans.find(s => s.id === id);
+                const scanInfo = scan ? `${scan.stockCode} - ${scan.description}` : 'this scan';
+                
+                // Use custom confirm dialog
+                const confirmed = await new Promise(resolve => {
+                    this.showModal({
+                        title: 'Delete Scan',
+                        message: `Are you sure you want to delete ${scanInfo}?`,
+                        type: 'confirm',
+                        confirmText: 'Delete',
+                        cancelText: 'Cancel',
+                        onConfirm: () => resolve(true),
+                        onCancel: () => resolve(false)
+                    });
+                });
+                
+                if (!confirmed) return;
+                
                 if (this.useNeonDB) {
                     await db.deleteStockScan(id);
                 } else if (supabase) {
@@ -2045,12 +2067,14 @@
                     } catch (err) {
                         console.error('Failed to delete from Supabase:', err);
                         alert('Failed to delete scan from database.');
+                        return;
                     }
                 } else {
                     localStorage_db.delete(id);
                 }
                 
-                await this.loadScans();
+                // Remove from local scans array immediately
+                this.scans = this.scans.filter(s => s.id !== id);
                 this.triggerHaptic('heavy');
                 this.render();
             }
