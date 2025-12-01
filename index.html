@@ -3803,6 +3803,35 @@
                 `;
             }
 
+            renderFloatingButtons() {
+                const container = document.getElementById('floating-buttons');
+                if (!container) return;
+                
+                // Only show floating scan button when there's an active session and we're in the main session view
+                // (not showing settings, product DB, session history, start screen, or scanning)
+                const shouldShow = this.activeStockTake && 
+                    !this.showingStartStockTake && 
+                    !this.showingSettings && 
+                    !this.showingProductDB && 
+                    !this.showingRMProductDB && 
+                    !this.showingSessionHistory &&
+                    !this.isScanning;
+                
+                if (!shouldShow) {
+                    container.innerHTML = '';
+                    return;
+                }
+                
+                const isRM = this.activeStockTake?.sessionType === 'RM';
+                container.innerHTML = `
+                    <button onclick="app.startScanning()" class="fixed bottom-6 right-6 w-16 h-16 ${isRM ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'} active:scale-95 text-white rounded-full shadow-xl z-[9999] flex items-center justify-center transition-all">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                        </svg>
+                    </button>
+                `;
+            }
+
             // Optimized render with debouncing to prevent excessive DOM updates
             render() {
                 // Skip if render is already scheduled
@@ -3827,6 +3856,7 @@
             _executeRender() {
                 this._lastRenderTime = performance.now();
                 this.renderModal();
+                this.renderFloatingButtons();
                 const scrollY = window.scrollY;
                 const app = document.getElementById('app');
                 
@@ -5162,13 +5192,6 @@
                             }).join('')}
                             </div>
                         </div>
-
-                        <!-- Floating Scan Button - Bottom Right -->
-                        <button onclick="app.startScanning()" class="fixed bottom-6 right-6 w-16 h-16 ${this.activeStockTake?.sessionType === 'RM' ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'} active:scale-95 text-white rounded-full shadow-xl z-40 flex items-center justify-center transition-all">
-                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
-                            </svg>
-                        </button>
                     </div>
                 `);
             }
