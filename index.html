@@ -2055,37 +2055,12 @@
                 
                 // For RM: Handle stock code not found in database
                 if (sessionType === 'RM' && parsed.needsStockCodeScan) {
-                    // Prompt user to scan stock code barcode to confirm
-                    this.showModal({
-                        title: '📦 Unknown Product',
-                        message: `This product is not in the database.\n\nScanned: ${parsed.raw}\n\nPlease scan the STOCK CODE barcode to confirm the stock code.`,
-                        type: 'input',
-                        confirmText: 'Confirm Stock Code',
-                        cancelText: 'Cancel',
-                        onConfirm: (formData) => {
-                            const confirmedStockCode = formData.value?.trim();
-                            if (confirmedStockCode) {
-                                parsed.stockCode = confirmedStockCode;
-                                parsed.needsStockCodeScan = false;
-                                // Re-extract batch from remaining string
-                                if (parsed.raw.toUpperCase().startsWith(confirmedStockCode.toUpperCase())) {
-                                    const remaining = parsed.raw.substring(confirmedStockCode.length);
-                                    // Remove expiry from end if present
-                                    let batchPart = remaining;
-                                    if (parsed.extractedExpiry) {
-                                        batchPart = batchPart.replace(parsed.extractedExpiry, '').trim();
-                                    }
-                                    batchPart = batchPart.replace(/^[\-_\s]+/, '').trim();
-                                    if (batchPart) {
-                                        parsed.batchNumber = batchPart;
-                                        parsed.needsBatchConfirmation = true;
-                                    }
-                                }
-                                // Continue to batch confirmation
-                                this._continueRMScan(parsed, scanKey);
-                            }
-                        }
-                    });
+                    // Store data for after scan
+                    this._unknownStockParsed = parsed;
+                    this._unknownStockScanKey = scanKey;
+                    
+                    // Go straight into scanning mode
+                    this.scanUnknownStockCode();
                     return;
                 }
                 
@@ -3337,6 +3312,161 @@
                 this._stockCodeScanData = null;
             }
             
+            // Scan stock code for unknown RM product - goes straight into camera
+            async scanUnknownStockCode() {
+                // Close any popup if exists
+                const popup = document.getElementById('unknown-stock-popup');
+                if (popup) popup.remove();
+                
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: 'environment' } 
+                    });
+                    
+                    // Create scanner overlay with message about unknown product
+                    const overlay = document.createElement('div');
+                    overlay.id = 'unknown-stock-scanner';
+                    overlay.innerHTML = `
+                        <div class="fixed inset-0 bg-black z-[10000] flex flex-col">
+                            <div class="bg-orange-500 p-4 flex items-center justify-between">
+                                <div>
+                                    <span class="text-white font-bold text-lg">📦 Unknown Product</span>
+                                    <p class="text-orange-100 text-sm">Scan the STOCK CODE barcode</p>
+                                </div>
+                                <button onclick="app.cancelUnknownStockScan()" class="text-white p-2 hover:bg-white/20 rounded-full">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="flex-1 relative">
+                                <video id="unknown-stock-video" class="w-full h-full object-cover" autoplay playsinline></video>
+                                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div class="w-72 h-36 border-2 border-orange-400/70 rounded-lg relative">
+                                        <div class="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-orange-400 rounded-tl-lg"></div>
+                                        <div class="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-orange-400 rounded-tr-lg"></div>
+                                        <div class="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-orange-400 rounded-bl-lg"></div>
+                                        <div class="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-orange-400 rounded-br-lg"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bg-orange-500 p-4 text-center">
+                                <p class="text-white font-medium">Point camera at the stock code barcode</p>
+                                <p class="text-orange-100 text-sm mt-1">This will confirm the product identity</p>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                    
+                    const video = document.getElementById('unknown-stock-video');
+                    video.srcObject = stream;
+                    
+                    this._unknownStockScannerStream = stream;
+                    
+                    // Use BarcodeDetector if available
+                    if ('BarcodeDetector' in window) {
+                        const detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code'] });
+                        
+                        const scanFrame = async () => {
+                            if (!this._unknownStockScannerStream) return;
+                            
+                            try {
+                                const barcodes = await detector.detect(video);
+                                if (barcodes.length > 0) {
+                                    const stockCode = barcodes[0].rawValue;
+                                    this.finishUnknownStockScan(stockCode);
+                                    return;
+                                }
+                            } catch (err) {
+                                // Ignore detection errors
+                            }
+                            
+                            if (this._unknownStockScannerStream) {
+                                requestAnimationFrame(scanFrame);
+                            }
+                        };
+                        
+                        video.onloadedmetadata = () => {
+                            video.play();
+                            requestAnimationFrame(scanFrame);
+                        };
+                    } else {
+                        // Fallback: prompt for manual entry
+                        this.cancelUnknownStockScan();
+                        const stockCode = prompt('BarcodeDetector not supported. Please enter the stock code manually:');
+                        if (stockCode) {
+                            this.finishUnknownStockScan(stockCode);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Camera access failed:', err);
+                    alert('Could not access camera. Please check permissions.');
+                    this._unknownStockParsed = null;
+                    this._unknownStockScanKey = null;
+                }
+            }
+            
+            finishUnknownStockScan(stockCode) {
+                // Stop scanner
+                if (this._unknownStockScannerStream) {
+                    this._unknownStockScannerStream.getTracks().forEach(track => track.stop());
+                    this._unknownStockScannerStream = null;
+                }
+                
+                // Remove overlay
+                const overlay = document.getElementById('unknown-stock-scanner');
+                if (overlay) overlay.remove();
+                
+                // Process the scanned stock code
+                const parsed = this._unknownStockParsed;
+                const scanKey = this._unknownStockScanKey;
+                
+                if (parsed && stockCode) {
+                    parsed.stockCode = stockCode.trim();
+                    parsed.needsStockCodeScan = false;
+                    
+                    // Re-extract batch from remaining string
+                    if (parsed.raw.toUpperCase().startsWith(stockCode.toUpperCase())) {
+                        const remaining = parsed.raw.substring(stockCode.length);
+                        // Remove expiry from end if present
+                        let batchPart = remaining;
+                        if (parsed.extractedExpiry) {
+                            batchPart = batchPart.replace(parsed.extractedExpiry, '').trim();
+                        }
+                        batchPart = batchPart.replace(/^[\-_\s]+/, '').trim();
+                        if (batchPart) {
+                            parsed.batchNumber = batchPart;
+                            parsed.needsBatchConfirmation = true;
+                        }
+                    }
+                    
+                    // Continue to batch confirmation
+                    this._continueRMScan(parsed, scanKey);
+                }
+                
+                this._unknownStockParsed = null;
+                this._unknownStockScanKey = null;
+            }
+            
+            cancelUnknownStockScan() {
+                // Stop scanner
+                if (this._unknownStockScannerStream) {
+                    this._unknownStockScannerStream.getTracks().forEach(track => track.stop());
+                    this._unknownStockScannerStream = null;
+                }
+                
+                // Remove overlay
+                const overlay = document.getElementById('unknown-stock-scanner');
+                if (overlay) overlay.remove();
+                
+                // Remove popup if exists
+                const popup = document.getElementById('unknown-stock-popup');
+                if (popup) popup.remove();
+                
+                this._unknownStockParsed = null;
+                this._unknownStockScanKey = null;
+            }
+
             async processStockCodeScan(stockCode, scan, isRM) {
                 // Look up the stock code in the database to get description
                 let description = '';
