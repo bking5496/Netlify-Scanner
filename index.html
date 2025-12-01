@@ -549,6 +549,22 @@
             // Default to units for unknown stock codes
             return 'units';
         }
+
+        // Helper to convert DD/MM/YY to YYYY-MM-DD
+        function convertDMYtoYMD(dateStr) {
+            if (!dateStr) return null;
+            // Check if already in YYYY-MM-DD format
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+            
+            // Check if in DD/MM/YY or DD/MM/YYYY format
+            const match = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if (match) {
+                let [_, day, month, year] = match;
+                if (year.length === 2) year = '20' + year;
+                return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+            return dateStr; // Return original if format unknown
+        }
         
         function saveProductDatabase() {
             localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
@@ -588,6 +604,10 @@
         // Allows multiple entries with same stock_code + batch_number but different expiry_date
         async function addRawMaterialToSupabase(stockCode, description, batchNumber, expiryDate) {
             if (!supabase) return false;
+            
+            // Ensure date is in YYYY-MM-DD format
+            const formattedExpiry = convertDMYtoYMD(expiryDate);
+            
             try {
                 // First check if this exact combination already exists
                 const { data: existing } = await supabase
@@ -595,7 +615,7 @@
                     .select('id')
                     .eq('stock_code', stockCode)
                     .eq('batch_number', batchNumber || '')
-                    .eq('expiry_date', expiryDate || null)
+                    .eq('expiry_date', formattedExpiry || null)
                     .maybeSingle();
                 
                 if (existing) {
@@ -610,7 +630,7 @@
                         stock_code: stockCode, 
                         description: description,
                         batch_number: batchNumber || null,
-                        expiry_date: expiryDate || null
+                        expiry_date: formattedExpiry || null
                     });
                 return !error;
             } catch (err) {
@@ -2369,7 +2389,7 @@
                                 actual_cases: actualCases,
                                 pallet_number: parsedData.palletNumber || null,
                                 cases_on_pallet: parsedData.casesOnPallet || null,
-                                expiry_date: parsedData.expiryDate || null,
+                                expiry_date: convertDMYtoYMD(parsedData.expiryDate) || null,
                                 raw_code: parsedData.raw
                             };
                             
@@ -3425,27 +3445,73 @@
                     parsed.stockCode = stockCode.trim();
                     parsed.needsStockCodeScan = false;
                     
-                    // Re-extract batch from remaining string
-                    if (parsed.raw.toUpperCase().startsWith(stockCode.toUpperCase())) {
-                        const remaining = parsed.raw.substring(stockCode.length);
-                        // Remove expiry from end if present
-                        let batchPart = remaining;
-                        if (parsed.extractedExpiry) {
-                            batchPart = batchPart.replace(parsed.extractedExpiry, '').trim();
-                        }
-                        batchPart = batchPart.replace(/^[\-_\s]+/, '').trim();
-                        if (batchPart) {
-                            parsed.batchNumber = batchPart;
-                            parsed.needsBatchConfirmation = true;
-                        }
+                    // Check if this is a known product
+                    const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
+                    const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
+                    
+                    if (!knownRM && !knownType) {
+                        // NEW ITEM FLOW
+                        this.showModal({
+                            title: '🆕 New Product Detected',
+                            message: `Stock Code: ${parsed.stockCode}\n\nThis item is not in the database.\nPlease provide details:`,
+                            type: 'form',
+                            fields: [
+                                { name: 'description', label: 'Description', placeholder: 'Product Name', required: true },
+                                { name: 'isIngredient', label: 'Is this an Ingredient? (KG)', type: 'checkbox' }
+                            ],
+                            confirmText: 'Save & Continue',
+                            onConfirm: async (data) => {
+                                const description = data.description;
+                                const isIngredient = data.isIngredient;
+                                const type = isIngredient ? 'Ingredient' : 'Non-Ingredient';
+                                
+                                // 1. Save Product Type
+                                await addProductTypeToSupabase(parsed.stockCode, type, description);
+                                
+                                // 2. Save Raw Material info
+                                if (!rawMaterialsDatabase[parsed.stockCode]) {
+                                    rawMaterialsDatabase[parsed.stockCode] = { description, batches: {} };
+                                }
+                                rawMaterialsDatabase[parsed.stockCode].description = description;
+                                saveRawMaterialsDatabase();
+                                
+                                // 3. Update parsed object
+                                parsed.description = description;
+                                parsed.unitType = isIngredient ? 'kg' : 'units';
+                                
+                                // 4. Continue with batch extraction/confirmation
+                                this._processBatchAndContinue(parsed, scanKey, stockCode);
+                            }
+                        });
+                        return; // Stop here, wait for modal
                     }
                     
-                    // Continue to batch confirmation
-                    this._continueRMScan(parsed, scanKey);
+                    // Known item - proceed
+                    this._processBatchAndContinue(parsed, scanKey, stockCode);
                 }
                 
                 this._unknownStockParsed = null;
                 this._unknownStockScanKey = null;
+            }
+
+            _processBatchAndContinue(parsed, scanKey, stockCode) {
+                // Re-extract batch from remaining string
+                if (parsed.raw.toUpperCase().startsWith(stockCode.toUpperCase())) {
+                    const remaining = parsed.raw.substring(stockCode.length);
+                    // Remove expiry from end if present
+                    let batchPart = remaining;
+                    if (parsed.extractedExpiry) {
+                        batchPart = batchPart.replace(parsed.extractedExpiry, '').trim();
+                    }
+                    batchPart = batchPart.replace(/^[\-_\s]+/, '').trim();
+                    if (batchPart) {
+                        parsed.batchNumber = batchPart;
+                        parsed.needsBatchConfirmation = true;
+                    }
+                }
+                
+                // Continue to batch confirmation
+                this._continueRMScan(parsed, scanKey);
             }
             
             cancelUnknownStockScan() {
