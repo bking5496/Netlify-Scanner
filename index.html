@@ -3540,13 +3540,22 @@
                             type: 'form',
                             fields: [
                                 { name: 'description', label: 'Description', placeholder: 'Product Name', required: true },
-                                { name: 'isIngredient', label: 'Is this an Ingredient? (KG)', type: 'checkbox' }
+                                { 
+                                    name: 'productType', 
+                                    label: 'Product Type', 
+                                    type: 'choice',
+                                    value: 'Non-Ingredient',
+                                    options: [
+                                        { label: 'Ingredient', value: 'Ingredient', sublabel: 'Measured in KG' },
+                                        { label: 'Finished Product', value: 'Non-Ingredient', sublabel: 'Measured in Units/Cases' }
+                                    ]
+                                }
                             ],
                             confirmText: 'Save & Continue',
                             onConfirm: async (data) => {
                                 const description = data.description;
-                                const isIngredient = data.isIngredient;
-                                const type = isIngredient ? 'Ingredient' : 'Non-Ingredient';
+                                const type = data.productType;
+                                const isIngredient = type === 'Ingredient';
                                 
                                 // 1. Save Product Type
                                 await addProductTypeToSupabase(parsed.stockCode, type, description);
