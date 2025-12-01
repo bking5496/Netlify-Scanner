@@ -1029,6 +1029,7 @@
                 this.historyScans = [];
                 this.selectedHistorySession = null;
                 this.pendingScan = null;
+                this.pendingScanKeys = new Set(); // Track scans being processed to prevent double-capture
                 this.currentTakeDate = new Date().toISOString().split('T')[0];
                 this.syncInterval = null;
                 this.heartbeatInterval = null;
@@ -1839,6 +1840,16 @@
                 this.render();
             }
 
+            // Generate a unique key for a scan to prevent double-capture
+            getScanKey(parsed) {
+                const sessionType = this.activeStockTake?.sessionType || 'FP';
+                if (sessionType === 'RM') {
+                    return `${parsed.stockCode}|${parsed.batchNumber}|${parsed.expiryDate || ''}`;
+                } else {
+                    return `${parsed.batchNumber}|${parsed.palletNumber}`;
+                }
+            }
+
             async onScanSuccess(code) {
                 const cleanedCode = (code || '').trim();
                 if (!cleanedCode) {
@@ -1852,6 +1863,15 @@
                 
                 if (!parsed.valid) {
                     alert(parsed.error);
+                    return;
+                }
+                
+                // Check if this scan is already being processed (prevents rapid double-scan)
+                const scanKey = this.getScanKey(parsed);
+                if (this.pendingScanKeys.has(scanKey)) {
+                    console.log('Scan already in progress:', scanKey);
+                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                    alert('This item is already being processed. Please wait.');
                     return;
                 }
                 
@@ -1898,6 +1918,9 @@
                         return;
                     }
                 }
+                
+                // Mark this scan as pending to prevent double-capture
+                this.pendingScanKeys.add(scanKey);
                 
                 this.currentScan = parsed;
                 this.showingCaseEntry = true;
@@ -2020,6 +2043,13 @@
                 }
                 
                 await this.loadScans();
+                
+                // Clear the pending scan key now that save is complete
+                if (this.currentScan) {
+                    const scanKey = this.getScanKey(this.currentScan);
+                    this.pendingScanKeys.delete(scanKey);
+                }
+                
                 this.currentScan = null;
                 this.showingCaseEntry = false;
                 this.triggerHaptic('success');
@@ -2135,6 +2165,12 @@
             }
 
             cancelCaseEntry() {
+                // Clear the pending scan key when cancelling
+                if (this.currentScan) {
+                    const scanKey = this.getScanKey(this.currentScan);
+                    this.pendingScanKeys.delete(scanKey);
+                }
+                
                 this.currentScan = null;
                 this.showingCaseEntry = false;
                 this.render();
