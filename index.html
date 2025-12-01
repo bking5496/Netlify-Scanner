@@ -693,6 +693,116 @@
                 return false;
             }
         }
+        
+        // Add a new product type to Supabase (only if it doesn't exist)
+        async function addProductTypeToSupabase(stockCode, productType, description) {
+            if (!supabase) return { success: false, error: 'Supabase not available' };
+            try {
+                // First check if this stock_code already exists
+                const { data: existing, error: checkError } = await supabase
+                    .from('product_types')
+                    .select('stock_code')
+                    .eq('stock_code', stockCode.toUpperCase())
+                    .maybeSingle();
+                
+                if (checkError) {
+                    console.error('Error checking existing product type:', checkError);
+                    return { success: false, error: checkError.message };
+                }
+                
+                if (existing) {
+                    console.log('Product type already exists:', stockCode);
+                    return { success: false, error: 'Product already exists', exists: true };
+                }
+                
+                // Insert new entry
+                const { error } = await supabase
+                    .from('product_types')
+                    .insert({ 
+                        stock_code: stockCode.toUpperCase(), 
+                        type: productType,
+                        description: description
+                    });
+                
+                if (error) {
+                    console.error('Error inserting product type:', error);
+                    return { success: false, error: error.message };
+                }
+                
+                // Update local cache
+                productTypeDatabase[stockCode.toUpperCase()] = {
+                    productType: productType,
+                    description: description,
+                    unitType: productType.toLowerCase() === 'ingredient' ? 'kg' : 'units'
+                };
+                localStorage.setItem('productTypeDatabase', JSON.stringify(productTypeDatabase));
+                
+                return { success: true };
+            } catch (err) {
+                console.error('Failed to add product type to Supabase:', err);
+                return { success: false, error: err.message };
+            }
+        }
+        
+        // Bulk add product types to Supabase (only adds ones that don't exist)
+        async function bulkAddProductTypesToSupabase(products) {
+            if (!supabase) return { success: false, error: 'Supabase not available', added: 0, skipped: 0 };
+            
+            try {
+                // Get all existing stock codes
+                const { data: existing, error: fetchError } = await supabase
+                    .from('product_types')
+                    .select('stock_code');
+                
+                if (fetchError) {
+                    console.error('Error fetching existing product types:', fetchError);
+                    return { success: false, error: fetchError.message, added: 0, skipped: 0 };
+                }
+                
+                const existingCodes = new Set((existing || []).map(p => p.stock_code?.toUpperCase()));
+                
+                // Filter out products that already exist
+                const newProducts = products.filter(p => !existingCodes.has(p.stock_code?.toUpperCase()));
+                const skippedCount = products.length - newProducts.length;
+                
+                if (newProducts.length === 0) {
+                    return { success: true, added: 0, skipped: skippedCount, message: 'All products already exist' };
+                }
+                
+                // Insert new products
+                const { error: insertError } = await supabase
+                    .from('product_types')
+                    .insert(newProducts.map(p => ({
+                        stock_code: p.stock_code?.toUpperCase(),
+                        type: p.type || 'Non-Ingredient',
+                        description: p.description || ''
+                    })));
+                
+                if (insertError) {
+                    console.error('Error bulk inserting product types:', insertError);
+                    return { success: false, error: insertError.message, added: 0, skipped: skippedCount };
+                }
+                
+                // Update local cache
+                newProducts.forEach(p => {
+                    const stockCode = p.stock_code?.toUpperCase();
+                    productTypeDatabase[stockCode] = {
+                        productType: p.type || 'Non-Ingredient',
+                        description: p.description || '',
+                        unitType: (p.type || '').toLowerCase() === 'ingredient' ? 'kg' : 'units'
+                    };
+                });
+                localStorage.setItem('productTypeDatabase', JSON.stringify(productTypeDatabase));
+                
+                // Reload from Supabase to ensure consistency
+                await loadProductTypesFromSupabase(true);
+                
+                return { success: true, added: newProducts.length, skipped: skippedCount };
+            } catch (err) {
+                console.error('Failed to bulk add product types:', err);
+                return { success: false, error: err.message, added: 0, skipped: 0 };
+            }
+        }
 
         // Generate device ID
         const DEVICE_ID = localStorage.getItem('deviceId') || (() => {
@@ -3205,6 +3315,118 @@
                     }
                 });
             }
+            
+            addProductType() {
+                this.showModal({
+                    title: 'Add Product Type',
+                    type: 'form',
+                    fields: [
+                        { name: 'stockCode', label: 'Stock Code', placeholder: 'e.g. RM001, FP123', required: true },
+                        { name: 'type', label: 'Type', placeholder: 'Ingredient or Non-Ingredient', required: true },
+                        { name: 'description', label: 'Description', placeholder: 'Product description', required: true }
+                    ],
+                    confirmText: 'Add Product Type',
+                    onConfirm: async (data) => {
+                        const { stockCode, type, description } = data;
+                        
+                        if (!stockCode || !type || !description) {
+                            alert('All fields are required');
+                            return;
+                        }
+                        
+                        const result = await addProductTypeToSupabase(stockCode, type, description);
+                        
+                        if (result.success) {
+                            this.showModal({
+                                title: 'Success',
+                                message: 'Product type added successfully!',
+                                type: 'alert'
+                            });
+                        } else if (result.exists) {
+                            this.showModal({
+                                title: 'Already Exists',
+                                message: `Product with stock code "${stockCode.toUpperCase()}" already exists in the database.`,
+                                type: 'alert'
+                            });
+                        } else {
+                            alert('Failed to add product type: ' + result.error);
+                        }
+                    }
+                });
+            }
+            
+            async importProductTypes() {
+                // Create file input dynamically
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.xlsx,.xls,.csv';
+                fileInput.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    try {
+                        const data = await file.arrayBuffer();
+                        const workbook = XLSX.read(data);
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet);
+                        
+                        if (json.length === 0) {
+                            alert('No data found in the file');
+                            return;
+                        }
+                        
+                        // Map columns - expect: type, stock_code, description
+                        // Also support: Type, Stock Code, Description (case insensitive)
+                        const products = json.map(row => {
+                            // Find the columns (case insensitive)
+                            const keys = Object.keys(row);
+                            const findKey = (names) => keys.find(k => names.includes(k.toLowerCase().replace(/[_\s]/g, '')));
+                            
+                            const typeKey = findKey(['type', 'producttype']);
+                            const stockCodeKey = findKey(['stockcode', 'stock_code', 'code', 'sku']);
+                            const descKey = findKey(['description', 'desc', 'name', 'productname']);
+                            
+                            return {
+                                type: row[typeKey] || 'Non-Ingredient',
+                                stock_code: row[stockCodeKey] || '',
+                                description: row[descKey] || ''
+                            };
+                        }).filter(p => p.stock_code); // Only include rows with stock code
+                        
+                        if (products.length === 0) {
+                            alert('No valid products found. Make sure your file has columns: stock_code, type, description');
+                            return;
+                        }
+                        
+                        // Show confirmation
+                        this.showModal({
+                            title: 'Confirm Import',
+                            message: `Found ${products.length} products in the file.\n\nOnly NEW products will be added.\nExisting products will be skipped.\n\nProceed with import?`,
+                            type: 'confirm',
+                            confirmText: 'Import',
+                            cancelText: 'Cancel',
+                            onConfirm: async () => {
+                                const result = await bulkAddProductTypesToSupabase(products);
+                                
+                                if (result.success) {
+                                    this.showModal({
+                                        title: 'Import Complete',
+                                        message: `Added: ${result.added} products\nSkipped (already exist): ${result.skipped} products`,
+                                        type: 'alert'
+                                    });
+                                    this.render();
+                                } else {
+                                    alert('Import failed: ' + result.error);
+                                }
+                            }
+                        });
+                    } catch (err) {
+                        console.error('Error reading file:', err);
+                        alert('Error reading file: ' + err.message);
+                    }
+                };
+                fileInput.click();
+            }
 
             async refreshProductsFromCloud() {
                 if (!supabase) {
@@ -4652,6 +4874,47 @@
                                                 </div>
                                             `;
                                         })()}
+                                    </div>
+                                    
+                                    <!-- Product Types Management -->
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                            Product Types Database
+                                        </label>
+                                        <div class="px-4 py-4 border rounded-xl border-slate-200 bg-slate-50">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div class="flex items-center gap-3">
+                                                    <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                                    </svg>
+                                                    <div>
+                                                        <div class="font-bold text-sm text-slate-800">${Object.keys(productTypeDatabase).length} Product Types</div>
+                                                        <div class="text-xs text-slate-500">${productTypesLoadedFromDB ? 'Synced from Supabase' : 'Local cache'}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="grid grid-cols-2 gap-2">
+                                                <button 
+                                                    onclick="app.addProductType()"
+                                                    class="py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                                    </svg>
+                                                    Add One
+                                                </button>
+                                                <button 
+                                                    onclick="app.importProductTypes()"
+                                                    class="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                                    </svg>
+                                                    Import Excel
+                                                </button>
+                                            </div>
+                                            <div class="text-xs text-slate-400 mt-2 text-center">Only new products will be added</div>
+                                        </div>
                                     </div>
                                     
                                     <div class="pt-2 space-y-3">
