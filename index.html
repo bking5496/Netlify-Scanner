@@ -3530,62 +3530,183 @@
                     parsed.stockCode = stockCode.trim();
                     parsed.needsStockCodeScan = false;
                     
-                    // Check if this is a known product
-                    const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
-                    const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
+                    // Parse the original string to extract batch, PO, and expiry
+                    // Format example: "STOCKCODE-BATCH1234-####DD/MM/YY" or "BATCH####DD/MM/YY"
+                    const rawString = parsed.raw || '';
                     
-                    if (!knownRM && !knownType) {
-                        // NEW ITEM FLOW
-                        this.showModal({
-                            title: '🆕 New Product Detected',
-                            message: `Stock Code: ${parsed.stockCode}\n\nThis item is not in the database.\nPlease provide details:`,
-                            type: 'form',
-                            fields: [
-                                { name: 'description', label: 'Description', placeholder: 'Product Name', required: true },
-                                { 
-                                    name: 'productType', 
-                                    label: 'Product Type', 
-                                    type: 'choice',
-                                    value: 'Non-Ingredient',
-                                    options: [
-                                        { label: 'Ingredient', value: 'Ingredient', sublabel: 'Measured in KG' },
-                                        { label: 'Finished Product', value: 'Non-Ingredient', sublabel: 'Measured in Units/Cases' }
-                                    ]
-                                }
-                            ],
-                            confirmText: 'Save & Continue',
-                            onConfirm: async (data) => {
-                                const description = data.description;
-                                const type = data.productType;
-                                const isIngredient = type === 'Ingredient';
-                                
-                                // 1. Save Product Type
-                                await addProductTypeToSupabase(parsed.stockCode, type, description);
-                                
-                                // 2. Save Raw Material info
-                                if (!rawMaterialsDatabase[parsed.stockCode]) {
-                                    rawMaterialsDatabase[parsed.stockCode] = { description, batches: {} };
-                                }
-                                rawMaterialsDatabase[parsed.stockCode].description = description;
-                                saveRawMaterialsDatabase();
-                                
-                                // 3. Update parsed object
-                                parsed.description = description;
-                                parsed.unitType = isIngredient ? 'kg' : 'units';
-                                
-                                // 4. Continue with batch extraction/confirmation
-                                this._processBatchAndContinue(parsed, scanKey, stockCode);
-                            }
-                        });
-                        return; // Stop here, wait for modal
+                    // Extract date from end (DD/MM/YY pattern)
+                    const dateMatch = rawString.match(/(\d{2}\/\d{2}\/\d{2})$/);
+                    let extractedDate = dateMatch ? dateMatch[1] : null;
+                    
+                    // Extract PO number (4 digits before date)
+                    let poNumber = null;
+                    let remainingForBatch = rawString;
+                    if (extractedDate) {
+                        const beforeDate = rawString.slice(0, -8); // Remove DD/MM/YY
+                        const poMatch = beforeDate.match(/(\d{4})$/);
+                        if (poMatch) {
+                            poNumber = poMatch[1];
+                            remainingForBatch = beforeDate.slice(0, -4); // Remove PO
+                        } else {
+                            remainingForBatch = beforeDate;
+                        }
                     }
                     
-                    // Known item - proceed
-                    this._processBatchAndContinue(parsed, scanKey, stockCode);
+                    // The batch is what remains after removing stock code prefix
+                    let suggestedBatch = remainingForBatch;
+                    if (remainingForBatch.toUpperCase().startsWith(stockCode.toUpperCase())) {
+                        suggestedBatch = remainingForBatch.substring(stockCode.length);
+                    }
+                    suggestedBatch = suggestedBatch.replace(/^[\-_\s]+/, '').replace(/[\-_\s]+$/, '').trim();
+                    
+                    // Store extracted data
+                    parsed.extractedExpiry = extractedDate;
+                    parsed.poNumber = poNumber;
+                    parsed.suggestedBatch = suggestedBatch;
+                    
+                    // Start the confirmation flow: Batch → Expiry → Description/Type
+                    this._confirmBatchNumber(parsed, scanKey, stockCode);
+                }
+            }
+            
+            _confirmBatchNumber(parsed, scanKey, stockCode) {
+                const suggestedBatch = parsed.suggestedBatch || '';
+                const poInfo = parsed.poNumber ? `\nPO Number: ${parsed.poNumber}` : '';
+                
+                this.showModal({
+                    title: '🏷️ Confirm Batch Number',
+                    message: `Stock Code: ${stockCode}${poInfo}\n\nOriginal scan: ${parsed.raw}\n\nPlease confirm or edit the batch number:`,
+                    type: 'input',
+                    confirmText: 'Next',
+                    cancelText: 'Cancel',
+                    onConfirm: (formData) => {
+                        const confirmedBatch = formData.value?.trim() || suggestedBatch;
+                        if (!confirmedBatch) {
+                            alert('Batch number is required');
+                            return;
+                        }
+                        parsed.batchNumber = confirmedBatch;
+                        
+                        // Next step: Confirm expiry
+                        this._confirmExpiryDate(parsed, scanKey, stockCode);
+                    },
+                    onCancel: () => {
+                        this._unknownStockParsed = null;
+                        this._unknownStockScanKey = null;
+                    }
+                });
+                
+                // Pre-fill with suggested batch
+                setTimeout(() => {
+                    const input = document.getElementById('modal-input');
+                    if (input) input.value = suggestedBatch;
+                }, 100);
+            }
+            
+            _confirmExpiryDate(parsed, scanKey, stockCode) {
+                const suggestedExpiry = parsed.extractedExpiry || '';
+                
+                this.showModal({
+                    title: '📅 Confirm Expiry Date',
+                    message: `Stock Code: ${stockCode}\nBatch: ${parsed.batchNumber}\n\nPlease confirm or edit the expiry date (DD/MM/YY):`,
+                    type: 'input',
+                    confirmText: 'Next',
+                    cancelText: 'No Expiry',
+                    onConfirm: (formData) => {
+                        const confirmedExpiry = formData.value?.trim() || suggestedExpiry;
+                        parsed.expiryDate = confirmedExpiry || null;
+                        
+                        // Next step: Description and Type
+                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                    },
+                    onCancel: () => {
+                        parsed.expiryDate = null;
+                        // Continue to description
+                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                    }
+                });
+                
+                // Pre-fill with suggested expiry
+                setTimeout(() => {
+                    const input = document.getElementById('modal-input');
+                    if (input) input.value = suggestedExpiry;
+                }, 100);
+            }
+            
+            _confirmDescriptionAndType(parsed, scanKey, stockCode) {
+                // Check if this is a known product (might have been added previously)
+                const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
+                const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
+                
+                if (knownRM || knownType) {
+                    // Known item - get description from database
+                    parsed.description = knownRM?.description || knownType?.description || stockCode;
+                    parsed.unitType = knownType?.type === 'Ingredient' ? 'kg' : 'units';
+                    
+                    // Skip to quantity entry
+                    this._finishNewItemFlow(parsed, scanKey);
+                    return;
                 }
                 
+                // Unknown item - ask for description and type
+                this.showModal({
+                    title: '📝 Product Details',
+                    message: `Stock Code: ${stockCode}\nBatch: ${parsed.batchNumber}${parsed.expiryDate ? '\nExpiry: ' + parsed.expiryDate : ''}`,
+                    type: 'form',
+                    fields: [
+                        { name: 'description', label: 'Description', placeholder: 'Product Name', required: true },
+                        { 
+                            name: 'productType', 
+                            label: 'Product Type', 
+                            type: 'choice',
+                            value: 'Ingredient',
+                            options: [
+                                { label: 'Ingredient', value: 'Ingredient', sublabel: 'Measured in KG' },
+                                { label: 'Non-Ingredient', value: 'Non-Ingredient', sublabel: 'Measured in Units' }
+                            ]
+                        }
+                    ],
+                    confirmText: 'Save & Continue',
+                    onConfirm: async (data) => {
+                        const description = data.description;
+                        const type = data.productType;
+                        const isIngredient = type === 'Ingredient';
+                        
+                        if (!description) {
+                            alert('Description is required');
+                            return;
+                        }
+                        
+                        // 1. Save Product Type to Supabase
+                        await addProductTypeToSupabase(parsed.stockCode, type, description);
+                        
+                        // 2. Save Raw Material info locally
+                        if (!rawMaterialsDatabase[parsed.stockCode]) {
+                            rawMaterialsDatabase[parsed.stockCode] = { description, batches: {} };
+                        }
+                        rawMaterialsDatabase[parsed.stockCode].description = description;
+                        saveRawMaterialsDatabase();
+                        
+                        // 3. Update parsed object
+                        parsed.description = description;
+                        parsed.unitType = isIngredient ? 'kg' : 'units';
+                        
+                        // 4. Continue to quantity entry
+                        this._finishNewItemFlow(parsed, scanKey);
+                    }
+                });
+            }
+            
+            _finishNewItemFlow(parsed, scanKey) {
+                // Clear temp storage
                 this._unknownStockParsed = null;
                 this._unknownStockScanKey = null;
+                
+                // Mark as ready for case entry
+                this.pendingScanKeys.add(scanKey);
+                this.currentScan = parsed;
+                this.showingCaseEntry = true;
+                this.render();
             }
 
             _processBatchAndContinue(parsed, scanKey, stockCode) {
