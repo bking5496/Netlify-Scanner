@@ -3075,7 +3075,29 @@
                                 // Lookup product in database
                                 const productInfo = productDatabase[code];
                                 if (!productInfo || productInfo.stockCode === 'UNKNOWN') {
-                                    alert(`Product not found for batch code: ${code}\n\nPlease check the code or add it to the product database.`);
+                                    // Product not found - show search to select product
+                                    // Create a partial parsed object for manual entry
+                                    const manualParsed = {
+                                        valid: true,
+                                        batchNumber: code,
+                                        palletNumber: 'MANUAL',
+                                        casesOnPallet: 0,
+                                        isUnknownProduct: true,
+                                        isManualEntry: true
+                                    };
+                                    
+                                    // Generate scanKey for duplicate prevention
+                                    const timestamp = Date.now().toString().slice(-8);
+                                    const rawCode = code.padStart(5, '0') + timestamp;
+                                    manualParsed.raw = rawCode;
+                                    const scanKey = `${code}-MANUAL-${rawCode}`;
+                                    
+                                    // Store data for after product selection
+                                    this._unknownFPParsed = manualParsed;
+                                    this._unknownFPScanKey = scanKey;
+                                    
+                                    // Show product search modal
+                                    this._showFPProductSearch(manualParsed, scanKey);
                                     return;
                                 }
                                 
