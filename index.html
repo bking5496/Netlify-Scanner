@@ -3716,7 +3716,10 @@
                                     endTime: session.endTime,
                                     status: isActive ? 'active' : (session.status || 'completed'),
                                     startedBy: session.startedBy || session.userName,
-                                    warehouse: session.warehouse || ''
+                                    warehouse: session.warehouse || '',
+                                    deviceCount: session.devices?.length || 0,
+                                    activeDeviceCount: session.devices?.filter(d => d.status === 'active').length || 0,
+                                    devices: session.devices || []
                                 });
                             }
                         } catch (e) {
@@ -3766,11 +3769,45 @@
                                         startTime: startTime,
                                         status: isActive ? 'active' : (session.status || 'completed'),
                                         startedBy: session.started_by,
-                                        warehouse: session.metadata?.warehouse || ''
+                                        warehouse: session.metadata?.warehouse || '',
+                                        deviceCount: session.metadata?.devices?.length || 0,
+                                        devices: session.metadata?.devices || []
                                     });
                                     seenSessionIds.add(session.id);
                                 }
                             });
+                            
+                            // Fetch device counts from session_devices table for all sessions
+                            const sessionIdsToFetch = stockTakesData.map(s => s.id).filter(Boolean);
+                            if (sessionIdsToFetch.length > 0) {
+                                try {
+                                    const { data: deviceData, error: deviceError } = await supabase
+                                        .from('session_devices')
+                                        .select('session_id, device_id, user_name, status')
+                                        .in('session_id', sessionIdsToFetch);
+                                    
+                                    if (!deviceError && deviceData) {
+                                        // Group by session_id
+                                        const devicesBySession = {};
+                                        deviceData.forEach(d => {
+                                            if (!devicesBySession[d.session_id]) {
+                                                devicesBySession[d.session_id] = [];
+                                            }
+                                            devicesBySession[d.session_id].push(d);
+                                        });
+                                        
+                                        // Update session device counts
+                                        allSessions.forEach(session => {
+                                            const sessionDevices = devicesBySession[session.id] || [];
+                                            session.deviceCount = sessionDevices.length;
+                                            session.activeDeviceCount = sessionDevices.filter(d => d.status === 'active').length;
+                                            session.deviceUsers = [...new Set(sessionDevices.map(d => d.user_name).filter(Boolean))];
+                                        });
+                                    }
+                                } catch (e) {
+                                    console.warn('Failed to fetch device counts:', e);
+                                }
+                            }
                         }
                         
                         // Fallback: also check stock_scans for any sessions not in stock_takes
@@ -6636,9 +6673,13 @@
                                                             ${this.selectedHistorySession.sessionType === 'RM' ? 'Raw Materials' : 'Finished Products'}
                                                         </span>
                                                         <span class="text-xs text-slate-500">${this.selectedHistorySession.date}</span>
+                                                        ${this.selectedHistorySession.warehouse ? `<span class="bg-slate-100 text-slate-600 text-xs font-medium px-2 py-0.5 rounded-full">📍 ${this.selectedHistorySession.warehouse}</span>` : ''}
                                                     </div>
-                                                    <p class="text-sm text-slate-600 mt-1">Session: ${this.selectedHistorySession.id.slice(-8)}</p>
-                                                    <p class="text-xs text-slate-500">Device: ${this.selectedHistorySession.device}</p>
+                                                    <p class="text-sm font-medium text-slate-700 mt-1">👤 ${this.selectedHistorySession.startedBy || 'Unknown supervisor'}</p>
+                                                    <p class="text-xs text-slate-500">
+                                                        ${this.selectedHistorySession.startTime || ''} 
+                                                        ${this.selectedHistorySession.deviceCount > 0 ? `• 👥 ${this.selectedHistorySession.deviceCount} device${this.selectedHistorySession.deviceCount > 1 ? 's' : ''}` : ''}
+                                                    </p>
                                                 </div>
                                                 <button onclick="app.exportHistorySession()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors flex items-center gap-2">
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6721,10 +6762,14 @@
                                                                                 live
                                                                             </span>
                                                                         </div>
-                                                                        <div class="text-xs text-slate-500 mt-0.5">
-                                                                            Session: ${session.id.slice(-8)} • ${session.device || 'Unknown device'}
+                                                                        <div class="text-xs text-slate-600 mt-0.5 font-medium">
+                                                                            👤 ${session.startedBy || 'Unknown'} ${session.warehouse ? `• 📍 ${session.warehouse}` : ''}
                                                                         </div>
-                                                                        ${session.startTime ? `<div class="text-xs text-slate-400">${session.startTime}</div>` : ''}
+                                                                        <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                                                                            <span>${session.startTime || ''}</span>
+                                                                            ${session.activeDeviceCount > 0 ? `<span class="text-emerald-600">👥 ${session.activeDeviceCount} active</span>` : ''}
+                                                                            ${session.deviceCount > 0 ? `<span>(${session.deviceCount} total)</span>` : ''}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                                 <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6755,10 +6800,13 @@
                                                                                 ${session.status || 'active'}
                                                                             </span>
                                                                         </div>
-                                                                        <div class="text-xs text-slate-500 mt-0.5">
-                                                                            Session: ${session.id.slice(-8)} • ${session.device || 'Unknown device'}
+                                                                        <div class="text-xs text-slate-600 mt-0.5 font-medium">
+                                                                            👤 ${session.startedBy || 'Unknown'} ${session.warehouse ? `• 📍 ${session.warehouse}` : ''}
                                                                         </div>
-                                                                        ${session.startTime ? `<div class="text-xs text-slate-400">${session.startTime}</div>` : ''}
+                                                                        <div class="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
+                                                                            <span>${session.startTime || ''}</span>
+                                                                            ${session.deviceCount > 0 ? `<span>👥 ${session.deviceCount} device${session.deviceCount > 1 ? 's' : ''}</span>` : ''}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                                 <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
