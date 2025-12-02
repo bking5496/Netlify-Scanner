@@ -779,13 +779,37 @@
                 currentLocation: '',
                 site: '',
                 aisle: '',
-                rack: ''
+                rack: '',
+                // Warehouse location system
+                warehouseConfig: {
+                    name: 'Main Warehouse',
+                    racks: [], // Array of rack configs: { id, name, rows, columns, levels }
+                    floorLocations: [] // Array of floor location names
+                },
+                selectedWarehouseLocation: null // { type: 'rack' | 'floor', rackId?, level?, position?, floorId? }
             };
             const data = localStorage.getItem('sessionSettings');
             return data ? { ...defaults, ...JSON.parse(data) } : defaults;
         };
         const saveSessionSettings = (settings) => {
             localStorage.setItem('sessionSettings', JSON.stringify(settings));
+        };
+        
+        // Generate location code from selection
+        const generateLocationCode = (settings) => {
+            const loc = settings.selectedWarehouseLocation;
+            if (!loc) return '';
+            
+            if (loc.type === 'floor') {
+                return `FLOOR-${loc.floorId}`;
+            } else if (loc.type === 'rack') {
+                const rack = settings.warehouseConfig?.racks?.find(r => r.id === loc.rackId);
+                const rackName = rack?.name || loc.rackId;
+                const level = String.fromCharCode(64 + (loc.level || 1)); // 1=A, 2=B, etc.
+                const position = loc.position || 1;
+                return `${rackName}-${level}${position}`;
+            }
+            return '';
         };
 
         // Session management - track sessions per day
@@ -1209,6 +1233,165 @@
                 // Don't re-render here - it causes the input to lose focus
                 // The value is already saved, and the UI will update on next render
             }
+            
+            // ===== WAREHOUSE LOCATION SYSTEM =====
+            
+            showWarehouseSetup() {
+                this.showingWarehouseSetup = true;
+                this.render();
+            }
+            
+            hideWarehouseSetup() {
+                this.showingWarehouseSetup = false;
+                this.render();
+            }
+            
+            addRack() {
+                this.showModal({
+                    title: '➕ Add New Rack',
+                    message: 'Configure the rack dimensions:',
+                    type: 'form',
+                    fields: [
+                        { name: 'name', label: 'Rack Name', placeholder: 'e.g., RACK01, A1', required: true },
+                        { name: 'columns', label: 'Columns (left to right)', type: 'number', value: '5', placeholder: '5', required: true },
+                        { name: 'levels', label: 'Levels (bottom to top)', type: 'number', value: '4', placeholder: '4', required: true }
+                    ],
+                    confirmText: 'Add Rack',
+                    onConfirm: (data) => {
+                        const name = data.name?.trim().toUpperCase();
+                        const columns = parseInt(data.columns) || 5;
+                        const levels = parseInt(data.levels) || 4;
+                        
+                        if (!name) {
+                            alert('Rack name is required');
+                            return;
+                        }
+                        
+                        if (!this.sessionSettings.warehouseConfig) {
+                            this.sessionSettings.warehouseConfig = { name: 'Main Warehouse', racks: [], floorLocations: [] };
+                        }
+                        if (!this.sessionSettings.warehouseConfig.racks) {
+                            this.sessionSettings.warehouseConfig.racks = [];
+                        }
+                        
+                        // Check for duplicate
+                        if (this.sessionSettings.warehouseConfig.racks.some(r => r.name === name)) {
+                            alert('A rack with this name already exists');
+                            return;
+                        }
+                        
+                        this.sessionSettings.warehouseConfig.racks.push({
+                            id: 'rack_' + Date.now(),
+                            name: name,
+                            columns: columns,
+                            levels: levels
+                        });
+                        
+                        saveSessionSettings(this.sessionSettings);
+                        this.render();
+                    }
+                });
+            }
+            
+            deleteRack(rackId) {
+                if (!confirm('Delete this rack?')) return;
+                
+                if (this.sessionSettings.warehouseConfig?.racks) {
+                    this.sessionSettings.warehouseConfig.racks = this.sessionSettings.warehouseConfig.racks.filter(r => r.id !== rackId);
+                    saveSessionSettings(this.sessionSettings);
+                    this.render();
+                }
+            }
+            
+            addFloorLocation() {
+                this.showModal({
+                    title: '➕ Add Floor Location',
+                    message: 'Enter floor location name:',
+                    type: 'input',
+                    confirmText: 'Add',
+                    onConfirm: (data) => {
+                        const name = data.value?.trim().toUpperCase();
+                        if (!name) {
+                            alert('Name is required');
+                            return;
+                        }
+                        
+                        if (!this.sessionSettings.warehouseConfig) {
+                            this.sessionSettings.warehouseConfig = { name: 'Main Warehouse', racks: [], floorLocations: [] };
+                        }
+                        if (!this.sessionSettings.warehouseConfig.floorLocations) {
+                            this.sessionSettings.warehouseConfig.floorLocations = [];
+                        }
+                        
+                        if (this.sessionSettings.warehouseConfig.floorLocations.includes(name)) {
+                            alert('This floor location already exists');
+                            return;
+                        }
+                        
+                        this.sessionSettings.warehouseConfig.floorLocations.push(name);
+                        saveSessionSettings(this.sessionSettings);
+                        this.render();
+                    }
+                });
+            }
+            
+            deleteFloorLocation(name) {
+                if (!confirm('Delete this floor location?')) return;
+                
+                if (this.sessionSettings.warehouseConfig?.floorLocations) {
+                    this.sessionSettings.warehouseConfig.floorLocations = this.sessionSettings.warehouseConfig.floorLocations.filter(f => f !== name);
+                    saveSessionSettings(this.sessionSettings);
+                    this.render();
+                }
+            }
+            
+            showLocationPicker() {
+                this.showingLocationPicker = true;
+                this.selectedRackForPicker = null;
+                this.render();
+            }
+            
+            hideLocationPicker() {
+                this.showingLocationPicker = false;
+                this.selectedRackForPicker = null;
+                this.render();
+            }
+            
+            selectRackForPicker(rackId) {
+                this.selectedRackForPicker = rackId;
+                this.render();
+            }
+            
+            selectRackPosition(rackId, level, position) {
+                this.sessionSettings.selectedWarehouseLocation = {
+                    type: 'rack',
+                    rackId: rackId,
+                    level: level,
+                    position: position
+                };
+                this.sessionSettings.currentLocation = generateLocationCode(this.sessionSettings);
+                saveSessionSettings(this.sessionSettings);
+                this.hideLocationPicker();
+            }
+            
+            selectFloorLocation(floorId) {
+                this.sessionSettings.selectedWarehouseLocation = {
+                    type: 'floor',
+                    floorId: floorId
+                };
+                this.sessionSettings.currentLocation = generateLocationCode(this.sessionSettings);
+                saveSessionSettings(this.sessionSettings);
+                this.hideLocationPicker();
+            }
+            
+            clearLocation() {
+                this.sessionSettings.selectedWarehouseLocation = null;
+                this.sessionSettings.currentLocation = '';
+                saveSessionSettings(this.sessionSettings);
+                this.render();
+            }
+            
+            // ===== END WAREHOUSE LOCATION SYSTEM =====
             
             promptForLocation() {
                 this.showModal({
@@ -5403,52 +5586,44 @@
                                             
                                             ${this.sessionSettings.locationScanningEnabled ? `
                                                 <div class="mt-4 pt-4 border-t border-slate-200">
-                                                    <label class="block text-xs font-medium text-slate-500 mb-2">Current Location</label>
-                                                    <div class="flex gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            id="locationInput"
-                                                            value="${this.sessionSettings.currentLocation || ''}"
-                                                            placeholder="e.g., Rack A1, Floor 2"
-                                                            class="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                                        />
-                                                        <button 
-                                                            onclick="app.setLocation(document.getElementById('locationInput').value)"
-                                                            class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors"
-                                                        >
-                                                            Set
-                                                        </button>
+                                                    <!-- Current Location Display -->
+                                                    <div class="mb-4">
+                                                        <label class="block text-xs font-medium text-slate-500 mb-2">Current Location</label>
+                                                        <div class="flex items-center gap-2 p-3 bg-white border border-slate-200 rounded-xl">
+                                                            ${this.sessionSettings.currentLocation ? `
+                                                                <span class="flex-1 font-bold text-blue-600">${this.sessionSettings.currentLocation}</span>
+                                                                <button onclick="app.clearLocation()" class="p-1 text-slate-400 hover:text-red-500">
+                                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                                    </svg>
+                                                                </button>
+                                                            ` : `
+                                                                <span class="flex-1 text-slate-400 italic">No location selected</span>
+                                                            `}
+                                                        </div>
                                                     </div>
-                                                    <div class="grid grid-cols-3 gap-2 mt-3">
-                                                        <div>
-                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Site</label>
-                                                            <input 
-                                                                type="text"
-                                                                value="${this.sessionSettings.site || ''}"
-                                                                oninput="app.updateLocationHierarchy('site', this.value)"
-                                                                placeholder="Plant"
-                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                                            />
+                                                    
+                                                    <!-- Warehouse Setup Button -->
+                                                    <button 
+                                                        onclick="app.showWarehouseSetup()"
+                                                        class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                                                    >
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                        </svg>
+                                                        Configure Warehouse Locations
+                                                    </button>
+                                                    
+                                                    <!-- Quick Stats -->
+                                                    <div class="mt-3 grid grid-cols-2 gap-2 text-center text-xs">
+                                                        <div class="p-2 bg-white rounded-lg border border-slate-100">
+                                                            <div class="font-bold text-slate-800">${this.sessionSettings.warehouseConfig?.racks?.length || 0}</div>
+                                                            <div class="text-slate-500">Racks</div>
                                                         </div>
-                                                        <div>
-                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Aisle</label>
-                                                            <input 
-                                                                type="text"
-                                                                value="${this.sessionSettings.aisle || ''}"
-                                                                oninput="app.updateLocationHierarchy('aisle', this.value)"
-                                                                placeholder="Aisle"
-                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label class="text-[10px] uppercase tracking-wide text-slate-400 font-bold">Rack</label>
-                                                            <input 
-                                                                type="text"
-                                                                value="${this.sessionSettings.rack || ''}"
-                                                                oninput="app.updateLocationHierarchy('rack', this.value)"
-                                                                placeholder="Rack"
-                                                                class="w-full mt-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                                            />
+                                                        <div class="p-2 bg-white rounded-lg border border-slate-100">
+                                                            <div class="font-bold text-slate-800">${this.sessionSettings.warehouseConfig?.floorLocations?.length || 0}</div>
+                                                            <div class="text-slate-500">Floor Locations</div>
                                                         </div>
                                                     </div>
                                                 </div>
