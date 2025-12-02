@@ -902,7 +902,24 @@
         // Get active (non-completed) sessions for joining
         const getActiveSessionsForDate = (date) => {
             const sessions = getSessionsForDate(date);
-            return sessions.filter(s => s.status === 'active');
+            const role = getUserRole();
+            const userWarehouse = getUserWarehouse();
+            
+            return sessions.filter(s => {
+                // Must be active
+                if (s.status !== 'active') return false;
+                
+                // Admins see all sessions
+                if (role === 'admin') return true;
+                
+                // Non-admins with a warehouse only see matching sessions
+                if (userWarehouse) {
+                    const sessionWarehouse = s.metadata?.warehouse || '';
+                    return sessionWarehouse === userWarehouse;
+                }
+                
+                return true;
+            });
         };
         
         // Add a device to an existing session
@@ -3374,10 +3391,10 @@
                             const session = JSON.parse(localStorage.getItem(key));
                             if (session && session.id && !seenSessionIds.has(session.id)) {
                                 // Filter by warehouse for non-admin users
-                                if (role !== 'admin') {
+                                if (role !== 'admin' && userWarehouse) {
                                     const sessionWarehouse = session.warehouse || '';
-                                    // Only show sessions from same warehouse
-                                    if (sessionWarehouse && sessionWarehouse !== userWarehouse) {
+                                    // Only show sessions that match user's warehouse
+                                    if (sessionWarehouse !== userWarehouse) {
                                         continue; // Skip sessions from different warehouse
                                     }
                                 }
@@ -3420,10 +3437,10 @@
                             stockTakesData.forEach(session => {
                                 if (session.id && !seenSessionIds.has(session.id)) {
                                     // Filter by warehouse for non-admin users
-                                    if (role !== 'admin') {
+                                    if (role !== 'admin' && userWarehouse) {
                                         const sessionWarehouse = session.metadata?.warehouse || '';
-                                        // Only show sessions from same warehouse
-                                        if (sessionWarehouse && sessionWarehouse !== userWarehouse) {
+                                        // Only show sessions that match user's warehouse
+                                        if (sessionWarehouse !== userWarehouse) {
                                             return; // Skip sessions from different warehouse
                                         }
                                     }
