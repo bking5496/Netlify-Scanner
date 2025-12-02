@@ -1256,11 +1256,14 @@
             completedAt: row.completed_at,
             status: row.status || 'active',
             devices: (row.metadata && row.metadata.devices) || [],
+            warehouse: (row.metadata && row.metadata.warehouse) || '',
             metadata: row.metadata || {}
         });
 
         const buildSupabaseSessionPayload = (session) => {
             const fallbackDate = session.startedAt ? new Date(session.startedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+            // Preserve warehouse from metadata if session.warehouse is not set
+            const warehouse = session.warehouse || session.metadata?.warehouse || null;
             return {
                 id: session.id,
                 session_type: session.sessionType,
@@ -1273,7 +1276,7 @@
                 metadata: {
                     ...(session.metadata || {}),
                     devices: session.devices || [],
-                    warehouse: session.warehouse || null,
+                    warehouse: warehouse,
                     lastUpdatedBy: session.lastUpdatedBy || (session.devices?.find(d => d.deviceId === DEVICE_ID)?.userName || null),
                     lastUpdatedAt: new Date().toISOString()
                 }
@@ -1309,10 +1312,28 @@
 
         async function saveSessionToSupabase(session) {
             if (!supabaseSessionsEnabled || !session) return true;
-            const payload = buildSupabaseSessionPayload(session);
             const isDuplicateError = (err) => err?.code === '23505' || /duplicate key value/i.test(err?.message || '');
 
             try {
+                // First, check if session already exists to preserve started_by
+                const { data: existing } = await supabase
+                    .from('stock_takes')
+                    .select('started_by, started_at, metadata')
+                    .eq('id', session.id)
+                    .maybeSingle();
+                
+                // Build payload, preserving original started_by and warehouse if they exist
+                const payload = buildSupabaseSessionPayload(session);
+                if (existing) {
+                    // Preserve original creator info - never overwrite started_by
+                    payload.started_by = existing.started_by || payload.started_by;
+                    payload.started_at = existing.started_at || payload.started_at;
+                    // Preserve original warehouse if not in current payload
+                    if (!payload.metadata.warehouse && existing.metadata?.warehouse) {
+                        payload.metadata.warehouse = existing.metadata.warehouse;
+                    }
+                }
+                
                 const { error } = await supabase
                     .from('stock_takes')
                     .upsert(payload, { onConflict: 'id' });
@@ -2025,7 +2046,9 @@
                     startedBy: updatedSession.startedBy,
                     startedAt: updatedSession.startedAt,
                     devices: updatedSession.devices,
-                    status: updatedSession.status
+                    status: updatedSession.status,
+                    warehouse: updatedSession.warehouse || updatedSession.metadata?.warehouse || '',
+                    metadata: updatedSession.metadata || {}
                 };
                 
                 setActiveStockTake(this.activeStockTake);
@@ -3732,11 +3755,14 @@
                                         ? new Date(session.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                                         : '';
                                     
+                                    // Get creator device from metadata or first device in list
+                                    const creatorDevice = session.metadata?.devices?.[0]?.deviceId || session.started_by || 'Unknown';
+                                    
                                     allSessions.push({
                                         id: session.id,
                                         date: session.take_date,
                                         sessionType: session.session_type || 'FP',
-                                        device: 'Supabase',
+                                        device: creatorDevice,
                                         startTime: startTime,
                                         status: isActive ? 'active' : (session.status || 'completed'),
                                         startedBy: session.started_by,
