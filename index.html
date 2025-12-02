@@ -2692,8 +2692,11 @@
             }
 
             editScan(id) {
-                console.log('editScan called with id:', id);
-                const scan = this.scans.find(s => s.id === id);
+                console.log('editScan called with id:', id, 'type:', typeof id);
+                console.log('Available scan IDs:', this.scans.map(s => ({ id: s.id, type: typeof s.id })));
+                
+                // Convert both to strings for comparison to handle UUID vs string mismatches
+                const scan = this.scans.find(s => String(s.id) === String(id));
                 console.log('Found scan:', scan);
                 if (!scan) {
                     console.error('Scan not found for id:', id);
@@ -2727,7 +2730,8 @@
             }
 
             async saveEditedScan(id, data) {
-                const scanIndex = this.scans.findIndex(s => s.id === id);
+                // Convert to string for comparison
+                const scanIndex = this.scans.findIndex(s => String(s.id) === String(id));
                 if (scanIndex === -1) return;
                 
                 const scan = this.scans[scanIndex];
@@ -2777,8 +2781,8 @@
             }
 
             async deleteScan(id) {
-                // Find the scan to show in confirmation
-                const scan = this.scans.find(s => s.id === id);
+                // Find the scan to show in confirmation (use string comparison)
+                const scan = this.scans.find(s => String(s.id) === String(id));
                 const scanInfo = scan ? `${scan.stockCode} - ${scan.description}` : 'this scan';
                 
                 // Use custom confirm dialog
@@ -2821,8 +2825,8 @@
                     localStorage_db.delete(id);
                 }
                 
-                // Remove from local scans array immediately
-                this.scans = this.scans.filter(s => s.id !== id);
+                // Remove from local scans array immediately (use string comparison)
+                this.scans = this.scans.filter(s => String(s.id) !== String(id));
                 this.triggerHaptic('heavy');
                 this.render();
             }
