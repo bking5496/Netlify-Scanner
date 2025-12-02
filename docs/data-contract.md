@@ -215,6 +215,58 @@ Returns just the role string for a given username.
 ### `list_app_users()` / `list_app_devices()`
 Admin functions to list all users/devices, optionally filtered.
 
+### `get_live_sessions()`
+Returns all active/paused sessions with device counts.
+```sql
+get_live_sessions(p_warehouse text DEFAULT NULL)
+RETURNS TABLE (
+    id text,
+    session_type text,
+    session_number integer,
+    take_date date,
+    status text,
+    started_by text,
+    started_at timestamptz,
+    warehouse text,
+    active_device_count bigint,
+    total_device_count bigint,
+    active_devices json
+);
+```
+Behavior:
+- Returns sessions with status `active` or `paused`.
+- Optionally filters by warehouse (PSA/PML).
+- Includes count of active devices and list of active device info.
+
+### `get_session_summary()`
+Returns detailed session info including scan counts.
+```sql
+get_session_summary(p_session_id text)
+RETURNS TABLE (id, session_type, status, started_by, started_at, warehouse, active_device_count, total_scan_count, devices json);
+```
+
+### `end_session()`
+Supervisor action to complete a session.
+```sql
+end_session(
+    p_session_id text,
+    p_ended_by text DEFAULT NULL,
+    p_device_id text DEFAULT NULL
+) RETURNS stock_takes;
+```
+Behavior:
+- Updates session status to `completed`.
+- Sets `completed_at` timestamp.
+- Marks all session devices as `completed`.
+- Logs status change to `session_status_events`.
+
+### `live_sessions` View
+SQL view providing easy access to active/paused sessions:
+```sql
+SELECT * FROM live_sessions WHERE warehouse = 'PSA';
+```
+Columns: id, session_type, session_number, take_date, status, started_by, started_at, paused_at, resumed_at, metadata, warehouse, active_device_count, total_device_count, active_devices.
+
 ### `validate_stock_scan()` trigger
 - Runs before insert/update on `stock_scans`.
 - Enforces 13-digit `raw_code` for FP scans.

@@ -1000,6 +1000,75 @@
             }
         };
         
+        // ===========================================
+        // LIVE SESSIONS FROM SUPABASE
+        // ===========================================
+        
+        // Get all live (active/paused) sessions from Supabase
+        const getLiveSessionsFromSupabase = async (warehouse = null) => {
+            if (!supabase || db.mode !== 'supabase') return [];
+            
+            try {
+                const { data, error } = await supabase.rpc('get_live_sessions', { 
+                    p_warehouse: warehouse 
+                });
+                
+                if (error) {
+                    console.warn('Failed to get live sessions from Supabase:', error);
+                    return [];
+                }
+                
+                return data || [];
+            } catch (err) {
+                console.error('Error getting live sessions:', err);
+                return [];
+            }
+        };
+        
+        // Get session summary with device info and scan counts
+        const getSessionSummaryFromSupabase = async (sessionId) => {
+            if (!supabase || db.mode !== 'supabase' || !sessionId) return null;
+            
+            try {
+                const { data, error } = await supabase.rpc('get_session_summary', { 
+                    p_session_id: sessionId 
+                });
+                
+                if (error) {
+                    console.warn('Failed to get session summary from Supabase:', error);
+                    return null;
+                }
+                
+                return data?.[0] || null;
+            } catch (err) {
+                console.error('Error getting session summary:', err);
+                return null;
+            }
+        };
+        
+        // End a session via Supabase (supervisor action)
+        const endSessionInSupabase = async (sessionId, endedBy = null) => {
+            if (!supabase || db.mode !== 'supabase' || !sessionId) return null;
+            
+            try {
+                const { data, error } = await supabase.rpc('end_session', { 
+                    p_session_id: sessionId,
+                    p_ended_by: endedBy || getUserName(),
+                    p_device_id: DEVICE_ID
+                });
+                
+                if (error) {
+                    console.warn('Failed to end session in Supabase:', error);
+                    return null;
+                }
+                
+                return data;
+            } catch (err) {
+                console.error('Error ending session:', err);
+                return null;
+            }
+        };
+        
         // Get/set active stock take
         const getActiveStockTake = () => {
             const data = localStorage.getItem('activeStockTake');

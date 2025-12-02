@@ -238,4 +238,153 @@ CREATE TRIGGER trg_app_users_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_app_users_timestamp();
 
+-- =============================================================================
+-- LIVE SESSIONS VIEW & FUNCTIONS
+-- Provides easy access to active/live sessions with device counts
+-- =============================================================================
+
+-- View for live sessions with aggregated device info
+CREATE OR REPLACE VIEW live_sessions AS
+SELECT 
+    st.id,
+    st.session_type,
+    st.session_number,
+    st.take_date,
+    st.status,
+    st.started_by,
+    st.started_at,
+    st.paused_at,
+    st.resumed_at,
+    st.metadata,
+    st.metadata->>'warehouse' as warehouse,
+    (SELECT COUNT(*) FROM session_devices sd WHERE sd.session_id = st.id AND sd.status = 'active') as active_device_count,
+    (SELECT COUNT(*) FROM session_devices sd WHERE sd.session_id = st.id) as total_device_count,
+    (SELECT json_agg(json_build_object(
+        'device_id', sd.device_id,
+        'user_name', sd.user_name,
+        'status', sd.status,
+        'last_seen', sd.last_seen
+    )) FROM session_devices sd WHERE sd.session_id = st.id AND sd.status = 'active') as active_devices
+FROM stock_takes st
+WHERE st.status IN ('active', 'paused');
+
+COMMENT ON VIEW live_sessions IS 'Active and paused sessions with device counts';
+
+-- Function to get live sessions (optionally filtered by warehouse)
+CREATE OR REPLACE FUNCTION get_live_sessions(p_warehouse text DEFAULT NULL)
+RETURNS TABLE (
+    id text,
+    session_type text,
+    session_number integer,
+    take_date date,
+    status text,
+    started_by text,
+    started_at timestamptz,
+    warehouse text,
+    active_device_count bigint,
+    total_device_count bigint,
+    active_devices json
+) AS $$
+BEGIN
+    IF p_warehouse IS NOT NULL THEN
+        RETURN QUERY 
+        SELECT ls.id, ls.session_type, ls.session_number, ls.take_date, ls.status, 
+               ls.started_by, ls.started_at, ls.warehouse, ls.active_device_count, 
+               ls.total_device_count, ls.active_devices
+        FROM live_sessions ls
+        WHERE ls.warehouse = p_warehouse
+        ORDER BY ls.started_at DESC;
+    ELSE
+        RETURN QUERY 
+        SELECT ls.id, ls.session_type, ls.session_number, ls.take_date, ls.status, 
+               ls.started_by, ls.started_at, ls.warehouse, ls.active_device_count, 
+               ls.total_device_count, ls.active_devices
+        FROM live_sessions ls
+        ORDER BY ls.started_at DESC;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get session summary by ID
+CREATE OR REPLACE FUNCTION get_session_summary(p_session_id text)
+RETURNS TABLE (
+    id text,
+    session_type text,
+    status text,
+    started_by text,
+    started_at timestamptz,
+    warehouse text,
+    active_device_count bigint,
+    total_scan_count bigint,
+    devices json
+) AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        st.id,
+        st.session_type,
+        st.status,
+        st.started_by,
+        st.started_at,
+        st.metadata->>'warehouse' as warehouse,
+        (SELECT COUNT(*) FROM session_devices sd WHERE sd.session_id = st.id AND sd.status = 'active') as active_device_count,
+        (SELECT COUNT(*) FROM stock_scans ss WHERE ss.session_id = st.id) as total_scan_count,
+        (SELECT json_agg(json_build_object(
+            'device_id', sd.device_id,
+            'user_name', sd.user_name,
+            'role', sd.role,
+            'status', sd.status,
+            'last_seen', sd.last_seen,
+            'joined_at', sd.joined_at
+        )) FROM session_devices sd WHERE sd.session_id = st.id) as devices
+    FROM stock_takes st
+    WHERE st.id = p_session_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to end a session (supervisor action)
+CREATE OR REPLACE FUNCTION end_session(
+    p_session_id text,
+    p_ended_by text DEFAULT NULL,
+    p_device_id text DEFAULT NULL
+) RETURNS stock_takes AS $$
+DECLARE
+    v_session stock_takes;
+    v_previous_status text;
+BEGIN
+    -- Get current session
+    SELECT * INTO v_session FROM stock_takes WHERE id = p_session_id;
+    
+    IF v_session.id IS NULL THEN
+        RAISE EXCEPTION 'Session not found: %', p_session_id;
+    END IF;
+    
+    v_previous_status := v_session.status;
+    
+    -- Update session to completed
+    UPDATE stock_takes SET
+        status = 'completed',
+        completed_at = now(),
+        metadata = jsonb_set(
+            COALESCE(metadata, '{}'::jsonb),
+            '{endedBy}',
+            to_jsonb(COALESCE(p_ended_by, 'system'))
+        )
+    WHERE id = p_session_id
+    RETURNING * INTO v_session;
+    
+    -- Mark all devices as completed
+    UPDATE session_devices SET
+        status = 'completed',
+        left_at = now()
+    WHERE session_id = p_session_id AND status != 'completed';
+    
+    -- Log the status change
+    INSERT INTO session_status_events (session_id, previous_status, next_status, actor, actor_device_id)
+    VALUES (p_session_id, v_previous_status, 'completed', COALESCE(p_ended_by, 'system'), p_device_id);
+    
+    RETURN v_session;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 COMMIT;
