@@ -2347,7 +2347,8 @@
                         cancelText: 'No Expiry',
                         onConfirm: (formData) => {
                             const confirmedExpiry = formData.value?.trim() || parsed.extractedExpiry;
-                            parsed.expiryDate = confirmedExpiry;
+                            // Convert DD/MM/YY to YYYY-MM-DD format
+                            parsed.expiryDate = confirmedExpiry ? convertDMYtoYMD(confirmedExpiry) : null;
                             parsed.needsExpiryConfirmation = false;
                             // Continue to duplicate check and case entry
                             this._continueRMScan(parsed, scanKey);
@@ -2481,7 +2482,8 @@
                         cancelText: 'No Expiry',
                         onConfirm: (formData) => {
                             const confirmedExpiry = formData.value?.trim() || parsed.extractedExpiry;
-                            parsed.expiryDate = confirmedExpiry;
+                            // Convert DD/MM/YY to YYYY-MM-DD format
+                            parsed.expiryDate = confirmedExpiry ? convertDMYtoYMD(confirmedExpiry) : null;
                             parsed.needsExpiryConfirmation = false;
                             this._continueRMScan(parsed, scanKey);
                         },
@@ -2852,19 +2854,21 @@
                     console.log('RM scan without expiry - showing modal');
                     this.showModal({
                         title: 'Expiry Date Required',
-                        message: 'Enter expiry date (YYYY-MM-DD) or leave blank:',
+                        message: 'Enter expiry date (DD/MM/YY or YYYY-MM-DD) or leave blank:',
                         type: 'input',
                         confirmText: 'Continue',
                         onConfirm: (data) => {
                             console.log('Expiry modal onConfirm called:', data);
                             const manualExpiry = data.value;
                             if (manualExpiry && manualExpiry.trim() !== '') {
-                                const parsedDate = new Date(manualExpiry.trim());
+                                // Convert DD/MM/YY to YYYY-MM-DD if needed
+                                const convertedExpiry = convertDMYtoYMD(manualExpiry.trim());
+                                const parsedDate = new Date(convertedExpiry);
                                 if (isNaN(parsedDate.getTime())) {
-                                    alert('Invalid expiry date format. Please use YYYY-MM-DD.');
+                                    alert('Invalid expiry date format. Please use DD/MM/YY or YYYY-MM-DD.');
                                     return;
                                 }
-                                this.currentScan.expiryDate = parsedDate.toISOString().split('T')[0];
+                                this.currentScan.expiryDate = convertedExpiry;
                                 console.log('Calling save with expiry:', this.currentScan.expiryDate);
                                 save();
                             } else {
@@ -3849,7 +3853,8 @@
                     cancelText: 'No Expiry',
                     onConfirm: (formData) => {
                         const confirmedExpiry = formData.value?.trim() || suggestedExpiry;
-                        parsed.expiryDate = confirmedExpiry || null;
+                        // Convert DD/MM/YY to YYYY-MM-DD format
+                        parsed.expiryDate = confirmedExpiry ? convertDMYtoYMD(confirmedExpiry) : null;
                         
                         // Next step: Description and Type
                         this._confirmDescriptionAndType(parsed, scanKey, stockCode);
@@ -3984,34 +3989,82 @@
             }
 
             async processStockCodeScan(stockCode, scan, isRM) {
-                // Look up the stock code in the database to get description
+                // Look up the stock code in the database to get description and type
                 let description = '';
+                let productType = 'Non-Ingredient';
+                let hasKnownType = false;
+                
+                // Check product types database first
+                const knownType = productTypeDatabase[stockCode.toUpperCase()];
+                if (knownType) {
+                    productType = knownType.productType || 'Non-Ingredient';
+                    description = knownType.description || '';
+                    hasKnownType = true;
+                }
                 
                 if (isRM) {
                     // Check RM database
                     if (rawMaterialsDatabase[stockCode]) {
-                        description = rawMaterialsDatabase[stockCode].description || '';
+                        description = description || rawMaterialsDatabase[stockCode].description || '';
                     }
                 } else {
                     // Check FP database - look for any product with this stock code
                     for (const [batch, info] of Object.entries(productDatabase)) {
                         if (info.stockCode === stockCode) {
-                            description = info.description || '';
+                            description = description || info.description || '';
                             break;
                         }
                     }
                 }
                 
-                // If no description found, prompt for it
-                if (!description) {
-                    description = prompt(`Enter description for ${stockCode}:`);
-                    if (!description) {
-                        alert('Description is required');
-                        return;
-                    }
+                // If no description or type found, prompt for both
+                if (!description || !hasKnownType) {
+                    // Use modal form to get description and product type
+                    this.showModal({
+                        title: '📝 Product Details',
+                        message: `Adding ${isRM ? 'Raw Material' : 'Product'}: ${stockCode}`,
+                        type: 'form',
+                        fields: [
+                            { name: 'description', label: 'Description', placeholder: 'Product Name', value: description || '', required: true },
+                            { 
+                                name: 'productType', 
+                                label: 'Product Type', 
+                                type: 'choice',
+                                value: productType,
+                                options: [
+                                    { label: 'Ingredient', value: 'Ingredient', sublabel: 'Measured in KG' },
+                                    { label: 'Non-Ingredient', value: 'Non-Ingredient', sublabel: 'Measured in Units' }
+                                ]
+                            }
+                        ],
+                        confirmText: 'Save to Database',
+                        onConfirm: async (data) => {
+                            const finalDescription = data.description;
+                            const finalType = data.productType;
+                            
+                            if (!finalDescription) {
+                                alert('Description is required');
+                                return;
+                            }
+                            
+                            // Save with description and type
+                            await this._saveProductToDatabase(stockCode, finalDescription, finalType, scan, isRM);
+                        }
+                    });
+                    return;
                 }
                 
-                // Add to database
+                // Known item - save with existing description and type
+                await this._saveProductToDatabase(stockCode, description, productType, scan, isRM);
+            }
+            
+            async _saveProductToDatabase(stockCode, description, productType, scan, isRM) {
+                const isIngredient = productType === 'Ingredient';
+                const unitType = isIngredient ? 'kg' : 'units';
+                
+                // 1. Save product type to database
+                await addProductTypeToSupabase(stockCode, productType, description);
+                
                 if (isRM) {
                     // Add to RM database
                     if (!rawMaterialsDatabase[stockCode]) {
@@ -4028,7 +4081,7 @@
                     }
                     saveRawMaterialsDatabase();
                     
-                    // Add to Supabase
+                    // Add to Supabase raw materials
                     await addRawMaterialToSupabase(stockCode, description, scan.batchNumber, scan.expiryDate);
                     
                     // Update the scan
@@ -4036,11 +4089,28 @@
                     if (scanIndex >= 0) {
                         this.scans[scanIndex].stockCode = stockCode;
                         this.scans[scanIndex].description = description;
+                        this.scans[scanIndex].unitType = unitType;
+                    }
+                    
+                    // Update scan in Supabase if it exists
+                    if (supabase && scan.id) {
+                        try {
+                            await supabase
+                                .from('stock_scans')
+                                .update({ 
+                                    stock_code: stockCode, 
+                                    description: description,
+                                    unit_type: unitType
+                                })
+                                .eq('id', scan.id);
+                        } catch (err) {
+                            console.error('Error updating scan in Supabase:', err);
+                        }
                     }
                     
                     this.showModal({
                         title: 'Success',
-                        message: `"${stockCode}" added to raw materials database!`,
+                        message: `"${stockCode}" added to database!\nType: ${productType} (${unitType})`,
                         type: 'alert',
                         confirmText: 'OK'
                     });
@@ -4069,6 +4139,21 @@
                     if (scanIndex >= 0) {
                         this.scans[scanIndex].stockCode = stockCode;
                         this.scans[scanIndex].description = description;
+                    }
+                    
+                    // Update scan in Supabase if it exists
+                    if (supabase && scan.id) {
+                        try {
+                            await supabase
+                                .from('stock_scans')
+                                .update({ 
+                                    stock_code: stockCode, 
+                                    description: description
+                                })
+                                .eq('id', scan.id);
+                        } catch (err) {
+                            console.error('Error updating scan in Supabase:', err);
+                        }
                     }
                     
                     this.showModal({
