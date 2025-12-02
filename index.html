@@ -760,6 +760,41 @@
         const getUserName = () => localStorage.getItem('userName') || '';
         const setUserName = (name) => localStorage.setItem('userName', name);
         
+        // Role detection based on name suffix (temporary for testing)
+        // *** = admin (full access)
+        // * = supervisor (can create sessions, see own session history)
+        // no suffix = operator (basic scanning only)
+        const getUserRole = () => {
+            const name = getUserName();
+            if (name.endsWith('***')) return 'admin';
+            if (name.endsWith('*')) return 'supervisor';
+            return 'operator';
+        };
+        
+        const getDisplayName = () => {
+            const name = getUserName();
+            // Remove role suffixes for display
+            return name.replace(/\*+$/, '').trim();
+        };
+        
+        const canCreateSession = () => {
+            const role = getUserRole();
+            return role === 'admin' || role === 'supervisor';
+        };
+        
+        const canViewSettings = () => {
+            return getUserRole() === 'admin';
+        };
+        
+        const canViewHistory = () => {
+            const role = getUserRole();
+            return role === 'admin' || role === 'supervisor';
+        };
+        
+        const canViewProductDatabase = () => {
+            return getUserRole() === 'admin';
+        };
+        
         // Get/set active stock take
         const getActiveStockTake = () => {
             const data = localStorage.getItem('activeStockTake');
@@ -3252,12 +3287,23 @@
                 }
                 
                 // Now load all sessions from localStorage
+                const role = getUserRole();
+                const displayName = getDisplayName();
+                
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
                     if (key && key.startsWith('stocktake_')) {
                         try {
                             const session = JSON.parse(localStorage.getItem(key));
                             if (session && session.id && !seenSessionIds.has(session.id)) {
+                                // For supervisors, only show sessions they created
+                                if (role === 'supervisor') {
+                                    const sessionCreator = (session.startedBy || session.userName || '').replace(/\*+$/, '').trim();
+                                    if (sessionCreator.toLowerCase() !== displayName.toLowerCase()) {
+                                        continue; // Skip sessions not created by this supervisor
+                                    }
+                                }
+                                
                                 seenSessionIds.add(session.id);
                                 // Determine if session is active
                                 const isActive = activeSessionIds.has(session.id);
@@ -3268,7 +3314,8 @@
                                     device: session.device || 'Unknown',
                                     startTime: session.startTime,
                                     endTime: session.endTime,
-                                    status: isActive ? 'active' : (session.status || 'completed')
+                                    status: isActive ? 'active' : (session.status || 'completed'),
+                                    startedBy: session.startedBy || session.userName
                                 });
                             }
                         } catch (e) {
@@ -3280,13 +3327,58 @@
                 // Also load sessions from Supabase if available
                 if (supabase && this.isBrowserOnline) {
                     try {
-                        // Get distinct sessions from stock_scans table
+                        // Get sessions from stock_takes table (has started_by info)
+                        const { data: stockTakesData, error: stockTakesError } = await supabase
+                            .from('stock_takes')
+                            .select('id, session_type, take_date, status, started_by, started_at')
+                            .order('take_date', { ascending: false })
+                            .order('started_at', { ascending: false });
+                        
+                        if (!stockTakesError && stockTakesData) {
+                            const role = getUserRole();
+                            const displayName = getDisplayName();
+                            
+                            stockTakesData.forEach(session => {
+                                if (session.id && !seenSessionIds.has(session.id)) {
+                                    // For supervisors, only show sessions they created
+                                    if (role === 'supervisor') {
+                                        // Compare display names (remove suffixes for comparison)
+                                        const sessionCreator = (session.started_by || '').replace(/\*+$/, '').trim();
+                                        if (sessionCreator.toLowerCase() !== displayName.toLowerCase()) {
+                                            return; // Skip sessions not created by this supervisor
+                                        }
+                                    }
+                                    // Admins see all, operators shouldn't reach here (canViewHistory check)
+                                    
+                                    const isActive = activeSessionIds.has(session.id);
+                                    const startTime = session.started_at 
+                                        ? new Date(session.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                        : '';
+                                    
+                                    allSessions.push({
+                                        id: session.id,
+                                        date: session.take_date,
+                                        sessionType: session.session_type || 'FP',
+                                        device: 'Supabase',
+                                        startTime: startTime,
+                                        status: isActive ? 'active' : (session.status || 'completed'),
+                                        startedBy: session.started_by
+                                    });
+                                    seenSessionIds.add(session.id);
+                                }
+                            });
+                        }
+                        
+                        // Fallback: also check stock_scans for any sessions not in stock_takes
                         const { data, error } = await supabase
                             .from('stock_scans')
-                            .select('session_id, session_type, scanned_at, device_id')
+                            .select('session_id, session_type, scanned_at, device_id, scanned_by')
                             .order('scanned_at', { ascending: false });
                         
                         if (!error && data) {
+                            const role = getUserRole();
+                            const displayName = getDisplayName();
+                            
                             // Group by session_id to get unique sessions
                             const sessionMap = new Map();
                             data.forEach(scan => {
@@ -3301,14 +3393,24 @@
                                         sessionType: scan.session_type || 'FP',
                                         device: scan.device_id || 'Unknown',
                                         startTime: scanDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                        status: isActive ? 'active' : 'completed'
+                                        status: isActive ? 'active' : 'completed',
+                                        startedBy: scan.scanned_by // Use first scanner as proxy for creator
                                     });
                                     seenSessionIds.add(scan.session_id);
                                 }
                             });
                             
-                            // Add Supabase sessions to the list
-                            sessionMap.forEach(session => allSessions.push(session));
+                            // Filter and add Supabase sessions to the list
+                            sessionMap.forEach(session => {
+                                // For supervisors, only show sessions they may have created
+                                if (role === 'supervisor') {
+                                    const sessionCreator = (session.startedBy || '').replace(/\*+$/, '').trim();
+                                    if (sessionCreator.toLowerCase() !== displayName.toLowerCase()) {
+                                        return; // Skip
+                                    }
+                                }
+                                allSessions.push(session);
+                            });
                         }
                     } catch (e) {
                         console.error('Error loading sessions from Supabase:', e);
@@ -5437,9 +5539,20 @@
                                                 id="userNameInput" 
                                                 value="${savedName}"
                                                 placeholder="Enter your name"
-                                                onchange="setUserName(this.value)"
+                                                onchange="setUserName(this.value); app.render();"
                                                 class="w-full px-4 py-3 text-center text-lg font-medium border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
                                             />
+                                            ${(() => {
+                                                const role = getUserRole();
+                                                if (role === 'admin') {
+                                                    return '<div class="mt-2 text-center"><span class="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">👑 Admin</span></div>';
+                                                } else if (role === 'supervisor') {
+                                                    return '<div class="mt-2 text-center"><span class="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⭐ Supervisor</span></div>';
+                                                } else {
+                                                    return '<div class="mt-2 text-center"><span class="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">👤 Operator</span></div>';
+                                                }
+                                            })()}
+                                            <p class="text-xs text-slate-400 mt-2 text-center">Add * for supervisor, *** for admin</p>
                                         </div>
                                         
                                         <div>
@@ -5465,21 +5578,25 @@
                                 </div>
                             </div>
                             
-                            <!-- Quick Actions -->
+                            <!-- Quick Actions (role-based) -->
                             <div class="p-4 sm:p-6 pt-0">
                                 <div class="max-w-lg mx-auto">
                                     <div class="flex gap-3 justify-center">
+                                        ${canViewHistory() ? `
                                         <button onclick="app.showSessionHistory()" class="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors flex items-center justify-center hover-lift" title="History">
                                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                             </svg>
                                         </button>
+                                        ` : ''}
+                                        ${canViewSettings() ? `
                                         <button onclick="app.showSettings()" class="w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors flex items-center justify-center hover-lift" title="Settings">
                                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                             </svg>
                                         </button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             </div>
@@ -5621,7 +5738,8 @@
                                 <p class="text-xs text-slate-400">${this.currentTakeDate}</p>
                             </div>
                             
-                            <!-- Floating Start New Session Button - Bottom Right -->
+                            <!-- Floating Start New Session Button - Bottom Right (supervisors/admins only) -->
+                            ${canCreateSession() ? `
                             <button 
                                 onclick="app.startNewStockTake('${savedName}', '${sessionType}')"
                                 class="fixed bottom-6 right-6 ${isRM ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'} text-white px-5 py-3 rounded-full shadow-xl transition-all flex items-center gap-2 font-bold text-sm z-40"
@@ -5631,6 +5749,7 @@
                                 </svg>
                                 New Session
                             </button>
+                            ` : ''}
                         </div>
                     `);
                     return;
@@ -6783,11 +6902,13 @@
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
+                                    ${canViewProductDatabase() ? `
                                     <button onclick="app.showProductDatabase()" class="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors" title="Products">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
                                         </svg>
                                     </button>
+                                    ` : ''}
                                     <button onclick="app.goHome()" class="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors" title="Back to Home">
                                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
