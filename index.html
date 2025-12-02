@@ -1933,10 +1933,8 @@
                     const palletNumber = code.substring(5, 9);   // Next 4 digits = pallet
                     const cases = code.substring(9, 13);         // Last 4 digits = cases
 
-                    const productInfo = productDatabase[batchNumber] || {
-                        stockCode: 'UNKNOWN',
-                        description: 'Unknown Product - Add to database'
-                    };
+                    const productInfo = productDatabase[batchNumber];
+                    const isUnknownProduct = !productInfo;
 
                     return {
                         valid: true,
@@ -1944,8 +1942,9 @@
                         batchNumber: batchNumber,
                         palletNumber: palletNumber,
                         casesOnPallet: parseInt(cases),
-                        stockCode: productInfo.stockCode,
-                        description: productInfo.description
+                        stockCode: productInfo?.stockCode || 'UNKNOWN',
+                        description: productInfo?.description || 'Unknown Product',
+                        isUnknownProduct: isUnknownProduct
                     };
                 }
                 
@@ -2239,7 +2238,33 @@
                 
                 this.stopScanning();
                 
-                // Check if we're waiting for a stock code scan (unknown product flow)
+                // Check if we're waiting for FP stock code scan
+                if (this._waitingForFPStockCode && this._unknownFPParsed) {
+                    this._waitingForFPStockCode = false;
+                    const stockCode = cleanedCode;
+                    const parsed = this._unknownFPParsed;
+                    
+                    // Don't accept a 13-digit code (that's a pallet barcode, not stock code)
+                    if (/^\d{13}$/.test(stockCode)) {
+                        this.showModal({
+                            title: '⚠️ Wrong Barcode',
+                            message: 'That looks like a pallet barcode, not a stock code.\n\nPlease scan the STOCK CODE barcode.',
+                            type: 'alert',
+                            confirmText: 'Try Again',
+                            onConfirm: () => {
+                                this._waitingForFPStockCode = true;
+                                this.startScanning();
+                            }
+                        });
+                        return;
+                    }
+                    
+                    // Look up or prompt for product details
+                    await this._processFPStockCodeScan(stockCode, parsed);
+                    return;
+                }
+                
+                // Check if we're waiting for a stock code scan (unknown product flow - RM)
                 if (this._waitingForStockCodeScan && this._unknownStockParsed) {
                     this._waitingForStockCodeScan = false;
                     const stockCode = cleanedCode;
@@ -2291,6 +2316,17 @@
                 }
                 
                 const sessionType = this.activeStockTake?.sessionType || 'FP';
+                
+                // For FP: Handle unknown product - show search to select product
+                if (sessionType === 'FP' && parsed.isUnknownProduct) {
+                    // Store data for after product selection
+                    this._unknownFPParsed = parsed;
+                    this._unknownFPScanKey = scanKey;
+                    
+                    // Show product search modal
+                    this._showFPProductSearch(parsed, scanKey);
+                    return;
+                }
                 
                 // For RM: Handle stock code not found in database
                 if (sessionType === 'RM' && parsed.needsStockCodeScan) {
@@ -3678,6 +3714,339 @@
                 this._searchingScanId = null;
                 this._searchingScan = null;
                 this._allProducts = [];
+            }
+            
+            // FP Product Search during initial scan flow (unknown product)
+            _showFPProductSearch(parsed, scanKey) {
+                // Get unique products from database (by stock code)
+                const uniqueProducts = {};
+                for (const [batch, info] of Object.entries(productDatabase)) {
+                    if (info.stockCode && !uniqueProducts[info.stockCode]) {
+                        uniqueProducts[info.stockCode] = {
+                            stockCode: info.stockCode,
+                            description: info.description || 'No description'
+                        };
+                    }
+                }
+                this._fpSearchProducts = Object.values(uniqueProducts).sort((a, b) => 
+                    a.stockCode.localeCompare(b.stockCode)
+                );
+                
+                // Create search overlay
+                const searchOverlay = document.createElement('div');
+                searchOverlay.id = 'fp-product-search-overlay';
+                searchOverlay.innerHTML = this._renderFPProductSearchHTML('', parsed);
+                document.body.appendChild(searchOverlay);
+                
+                // Focus on search input
+                setTimeout(() => {
+                    const input = document.getElementById('fp-product-search-input');
+                    if (input) input.focus();
+                }, 100);
+            }
+            
+            _renderFPProductSearchHTML(query, parsed) {
+                const filteredProducts = query.trim() === '' 
+                    ? this._fpSearchProducts.slice(0, 20)
+                    : this._fpSearchProducts.filter(p => 
+                        p.stockCode.toLowerCase().includes(query.toLowerCase()) ||
+                        p.description.toLowerCase().includes(query.toLowerCase())
+                    ).slice(0, 50);
+                
+                return `
+                    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
+                            <div class="p-4 border-b border-slate-100 flex-shrink-0">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-lg font-bold text-slate-900">🔍 Select Product</h3>
+                                    <button onclick="app._cancelFPProductSearch()" class="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                                        <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                    <p class="text-orange-800 text-sm font-medium">Unknown Batch: <span class="font-mono">${parsed?.batchNumber || 'N/A'}</span></p>
+                                    <p class="text-orange-600 text-xs mt-1">Pallet: ${parsed?.palletNumber || 'N/A'} • Cases: ${parsed?.casesOnPallet || 0}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="p-4 border-b border-slate-100 flex-shrink-0">
+                                <div class="relative">
+                                    <svg class="w-5 h-5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                    </svg>
+                                    <input 
+                                        id="fp-product-search-input"
+                                        type="text" 
+                                        placeholder="Search by stock code or description..."
+                                        value="${query}"
+                                        oninput="app._onFPProductSearchInput(this.value)"
+                                        class="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div class="flex-1 overflow-y-auto p-2">
+                                ${filteredProducts.length === 0 ? `
+                                    <div class="text-center py-8 text-slate-500">
+                                        <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        <p class="font-medium">No products found</p>
+                                        <p class="text-sm mt-1">Try a different search term</p>
+                                    </div>
+                                ` : filteredProducts.map(product => `
+                                    <button 
+                                        onclick="app._selectFPProduct('${product.stockCode.replace(/'/g, "\\'")}')"
+                                        class="w-full text-left p-3 hover:bg-blue-50 rounded-xl transition-colors flex items-center gap-3 border border-transparent hover:border-blue-200"
+                                    >
+                                        <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                            <span class="text-blue-600 font-bold text-xs">${product.stockCode.substring(0, 3)}</span>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="font-bold text-slate-900 text-sm">${product.stockCode}</div>
+                                            <div class="text-slate-500 text-xs truncate">${product.description}</div>
+                                        </div>
+                                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                    </button>
+                                `).join('')}
+                            </div>
+                            
+                            <div class="p-4 border-t border-slate-100 flex-shrink-0">
+                                <p class="text-xs text-slate-400 text-center mb-3">
+                                    ${filteredProducts.length} product${filteredProducts.length !== 1 ? 's' : ''} found
+                                </p>
+                                <button onclick="app._scanStockCodeForFP()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-medium text-sm transition-colors flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                    </svg>
+                                    Scan Stock Code Instead
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            _onFPProductSearchInput(query) {
+                const parsed = this._unknownFPParsed;
+                const overlay = document.getElementById('fp-product-search-overlay');
+                if (overlay && parsed) {
+                    overlay.innerHTML = this._renderFPProductSearchHTML(query, parsed);
+                    const input = document.getElementById('fp-product-search-input');
+                    if (input) {
+                        input.focus();
+                        input.setSelectionRange(query.length, query.length);
+                    }
+                }
+            }
+            
+            _cancelFPProductSearch() {
+                const overlay = document.getElementById('fp-product-search-overlay');
+                if (overlay) overlay.remove();
+                this._unknownFPParsed = null;
+                this._unknownFPScanKey = null;
+                this._fpSearchProducts = [];
+            }
+            
+            _scanStockCodeForFP() {
+                // Close search overlay
+                const overlay = document.getElementById('fp-product-search-overlay');
+                if (overlay) overlay.remove();
+                
+                const parsed = this._unknownFPParsed;
+                if (!parsed) return;
+                
+                // Set up for stock code scan
+                this._waitingForFPStockCode = true;
+                
+                this.showModal({
+                    title: '📦 Scan Stock Code',
+                    message: `Batch: ${parsed.batchNumber}\nPallet: ${parsed.palletNumber}\n\nPlease scan the STOCK CODE barcode on this product.`,
+                    type: 'alert',
+                    confirmText: 'Start Scanning',
+                    onConfirm: () => {
+                        this.startScanning();
+                    }
+                });
+            }
+            
+            async _processFPStockCodeScan(stockCode, parsed) {
+                // Look for product in database by stock code
+                let productInfo = null;
+                for (const [batch, info] of Object.entries(productDatabase)) {
+                    if (info.stockCode === stockCode) {
+                        productInfo = info;
+                        break;
+                    }
+                }
+                
+                const scanKey = this._unknownFPScanKey;
+                
+                if (productInfo) {
+                    // Found the product - update parsed data
+                    parsed.stockCode = stockCode;
+                    parsed.description = productInfo.description;
+                    parsed.isUnknownProduct = false;
+                    
+                    // Add batch to product database
+                    productDatabase[parsed.batchNumber] = {
+                        stockCode: stockCode,
+                        description: productInfo.description
+                    };
+                    saveProductDatabase();
+                    
+                    // Save to Supabase products table
+                    if (supabase) {
+                        try {
+                            await supabase
+                                .from('products')
+                                .upsert({ 
+                                    batch_number: parsed.batchNumber,
+                                    stock_code: stockCode, 
+                                    description: productInfo.description 
+                                }, { onConflict: 'batch_number' });
+                        } catch (err) {
+                            console.error('Error adding to Supabase:', err);
+                        }
+                    }
+                    
+                    // Clear temp storage
+                    this._unknownFPParsed = null;
+                    this._unknownFPScanKey = null;
+                    
+                    // Continue to case entry
+                    this.pendingScanKeys.add(scanKey);
+                    this.currentScan = parsed;
+                    this.showingCaseEntry = true;
+                    this.render();
+                } else {
+                    // Stock code not in database - ask for description
+                    this.showModal({
+                        title: '📝 New Product',
+                        message: `Stock Code: ${stockCode}\nBatch: ${parsed.batchNumber}\n\nPlease enter the product description:`,
+                        type: 'confirm',
+                        fields: [
+                            { name: 'description', label: 'Product Description', type: 'text', placeholder: 'e.g., Milk Chocolate 200g' }
+                        ],
+                        confirmText: 'Save',
+                        onConfirm: async (values) => {
+                            const description = values.description?.trim();
+                            if (!description) {
+                                alert('Please enter a description');
+                                return;
+                            }
+                            
+                            // Update parsed data
+                            parsed.stockCode = stockCode;
+                            parsed.description = description;
+                            parsed.isUnknownProduct = false;
+                            
+                            // Add to product database
+                            productDatabase[parsed.batchNumber] = {
+                                stockCode: stockCode,
+                                description: description
+                            };
+                            saveProductDatabase();
+                            
+                            // Save to Supabase products table
+                            if (supabase) {
+                                try {
+                                    await supabase
+                                        .from('products')
+                                        .upsert({ 
+                                            batch_number: parsed.batchNumber,
+                                            stock_code: stockCode, 
+                                            description: description 
+                                        }, { onConflict: 'batch_number' });
+                                } catch (err) {
+                                    console.error('Error adding to Supabase:', err);
+                                }
+                            }
+                            
+                            // Clear temp storage
+                            this._unknownFPParsed = null;
+                            this._unknownFPScanKey = null;
+                            
+                            // Continue to case entry
+                            this.pendingScanKeys.add(scanKey);
+                            this.currentScan = parsed;
+                            this.showingCaseEntry = true;
+                            this.render();
+                        }
+                    });
+                }
+            }
+            
+            async _selectFPProduct(stockCode) {
+                const parsed = this._unknownFPParsed;
+                const scanKey = this._unknownFPScanKey;
+                
+                // Close search overlay
+                const overlay = document.getElementById('fp-product-search-overlay');
+                if (overlay) overlay.remove();
+                this._fpSearchProducts = [];
+                
+                if (!parsed || !scanKey) {
+                    alert('Scan data lost. Please scan again.');
+                    this._unknownFPParsed = null;
+                    this._unknownFPScanKey = null;
+                    return;
+                }
+                
+                // Find product info
+                let productInfo = null;
+                for (const [batch, info] of Object.entries(productDatabase)) {
+                    if (info.stockCode === stockCode) {
+                        productInfo = info;
+                        break;
+                    }
+                }
+                
+                if (!productInfo) {
+                    alert('Product not found');
+                    return;
+                }
+                
+                // Update parsed data with product info
+                parsed.stockCode = stockCode;
+                parsed.description = productInfo.description;
+                parsed.isUnknownProduct = false;
+                
+                // Add batch to product database
+                productDatabase[parsed.batchNumber] = {
+                    stockCode: stockCode,
+                    description: productInfo.description
+                };
+                saveProductDatabase();
+                
+                // Save to Supabase products table
+                if (supabase) {
+                    try {
+                        await supabase
+                            .from('products')
+                            .upsert({ 
+                                batch_number: parsed.batchNumber,
+                                stock_code: stockCode, 
+                                description: productInfo.description 
+                            }, { onConflict: 'batch_number' });
+                    } catch (err) {
+                        console.error('Error adding to Supabase:', err);
+                    }
+                }
+                
+                // Clear temp storage
+                this._unknownFPParsed = null;
+                this._unknownFPScanKey = null;
+                
+                // Now continue to case entry with the updated parsed data
+                this.pendingScanKeys.add(scanKey);
+                this.currentScan = parsed;
+                this.showingCaseEntry = true;
+                this.render();
             }
             
             async selectProductForScan(stockCode) {
@@ -6498,7 +6867,7 @@
                                                 </span>
                                             </div>
                                             
-                                            ${scan.description.includes('Unknown') ? `
+                                            ${scan.description.includes('Unknown') && scan.sessionType === 'RM' ? `
                                                 <div class="mb-3">
                                                     <span class="text-orange-600 font-medium text-sm">${scan.description}</span>
                                                     <button onclick="event.stopPropagation(); app.addScannedItemToDatabase(app.scans.find(s => s.id === '${escapedId}'))" class="ml-2 px-2 py-0.5 text-xs font-bold bg-orange-100 text-orange-600 hover:bg-orange-200 rounded-full transition-colors">
