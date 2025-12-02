@@ -3874,32 +3874,37 @@
             }
             
             _confirmDescriptionAndType(parsed, scanKey, stockCode) {
-                // Check if this is a known product (might have been added previously)
+                // Check if this is a known product with BOTH description AND product type
                 const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
                 const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
                 
-                if (knownRM || knownType) {
-                    // Known item - get description from database
-                    parsed.description = knownRM?.description || knownType?.description || stockCode;
-                    parsed.unitType = knownType?.type === 'Ingredient' ? 'kg' : 'units';
+                // Only skip the form if we have BOTH a known type AND description
+                if (knownType && knownType.productType && knownRM?.description) {
+                    // Fully known item - get values from database
+                    parsed.description = knownRM.description || knownType.description || stockCode;
+                    parsed.unitType = knownType.productType === 'Ingredient' ? 'kg' : 'units';
                     
                     // Skip to quantity entry
                     this._finishNewItemFlow(parsed, scanKey);
                     return;
                 }
                 
-                // Unknown item - ask for description and type
+                // Get any existing values to pre-fill the form
+                const existingDescription = knownRM?.description || knownType?.description || '';
+                const existingType = knownType?.productType || 'Ingredient';
+                
+                // Unknown or incomplete item - ask for description and type
                 this.showModal({
                     title: '📝 Product Details',
-                    message: `Stock Code: ${stockCode}\nBatch: ${parsed.batchNumber}${parsed.expiryDate ? '\nExpiry: ' + parsed.expiryDate : ''}`,
+                    message: `Stock Code: ${stockCode}\nBatch: ${parsed.batchNumber}${parsed.expiryDate ? '\nExpiry: ' + parsed.expiryDate : ''}\n\nPlease enter product details:`,
                     type: 'form',
                     fields: [
-                        { name: 'description', label: 'Description', placeholder: 'Product Name', required: true },
+                        { name: 'description', label: 'Description', placeholder: 'Product Name', value: existingDescription, required: true },
                         { 
                             name: 'productType', 
                             label: 'Product Type', 
                             type: 'choice',
-                            value: 'Ingredient',
+                            value: existingType,
                             options: [
                                 { label: 'Ingredient', value: 'Ingredient', sublabel: 'Measured in KG' },
                                 { label: 'Non-Ingredient', value: 'Non-Ingredient', sublabel: 'Measured in Units' }
@@ -3920,18 +3925,29 @@
                         // 1. Save Product Type to Supabase
                         await addProductTypeToSupabase(parsed.stockCode, type, description);
                         
-                        // 2. Save Raw Material info locally
+                        // 2. Save Raw Material info locally AND to Supabase
                         if (!rawMaterialsDatabase[parsed.stockCode]) {
                             rawMaterialsDatabase[parsed.stockCode] = { description, batches: {} };
                         }
                         rawMaterialsDatabase[parsed.stockCode].description = description;
+                        if (parsed.batchNumber) {
+                            if (!rawMaterialsDatabase[parsed.stockCode].batches) {
+                                rawMaterialsDatabase[parsed.stockCode].batches = {};
+                            }
+                            rawMaterialsDatabase[parsed.stockCode].batches[parsed.batchNumber] = {
+                                expiryDates: parsed.expiryDate ? [parsed.expiryDate] : []
+                            };
+                        }
                         saveRawMaterialsDatabase();
                         
-                        // 3. Update parsed object
+                        // 3. Save to Supabase raw_materials table
+                        await addRawMaterialToSupabase(parsed.stockCode, description, parsed.batchNumber, parsed.expiryDate);
+                        
+                        // 4. Update parsed object
                         parsed.description = description;
                         parsed.unitType = isIngredient ? 'kg' : 'units';
                         
-                        // 4. Continue to quantity entry
+                        // 5. Continue to quantity entry
                         this._finishNewItemFlow(parsed, scanKey);
                     }
                 });
