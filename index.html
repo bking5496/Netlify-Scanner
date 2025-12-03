@@ -494,10 +494,10 @@
             if (!supabase || !sessionId) return null;
             
             try {
-                // All scans are in stock_scans table - only select fields needed for duplicate display
+                // All scans are in stock_scans table - select fields needed for duplicate display
                 let query = supabase
                     .from('stock_scans')
-                    .select('id,scanned_at,created_at,scanned_by,device_id')
+                    .select('id,scanned_at,created_at,scanned_by,device_id,actual_cases')
                     .eq('session_id', sessionId)
                     .eq('batch_number', batchNumber);
                 
@@ -4482,7 +4482,52 @@
                     this._unknownFPParsed = null;
                     this._unknownFPScanKey = null;
                     
-                    // Continue to case entry
+                    // Check for duplicate before proceeding to case entry
+                    const duplicate = await this.checkDuplicate(
+                        parsed.batchNumber, 
+                        parsed.palletNumber,
+                        parsed.stockCode,
+                        parsed.expiryDate
+                    );
+                    
+                    if (duplicate) {
+                        const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
+                        const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                        const existingCases = duplicate.actual_cases || duplicate.actualCases || 0;
+                        
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                        
+                        // Store duplicate info for update flow
+                        parsed.isDuplicatePallet = true;
+                        parsed.existingScanId = duplicate.id;
+                        parsed.existingCases = existingCases;
+                        
+                        // Show modal to notify and confirm update
+                        this.showModal({
+                            title: 'Pallet Already Scanned',
+                            message: `This pallet has already been scanned!\n\n` +
+                                `Stock Code: ${parsed.stockCode}\n` +
+                                `Batch: ${parsed.batchNumber}\n` +
+                                `Pallet: ${parsed.palletNumber}\n` +
+                                `Current Cases: ${existingCases}\n\n` +
+                                `Scanned by: ${scannedByName}\n` +
+                                `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                                `Would you like to update this pallet's count?`,
+                            type: 'confirm',
+                            confirmText: 'Update Count',
+                            cancelText: 'Cancel',
+                            onConfirm: () => {
+                                // Proceed to case entry to update
+                                this.pendingScanKeys.add(scanKey);
+                                this.currentScan = parsed;
+                                this.showingCaseEntry = true;
+                                this.render();
+                            }
+                        });
+                        return;
+                    }
+                    
+                    // No duplicate - continue to case entry
                     this.pendingScanKeys.add(scanKey);
                     this.currentScan = parsed;
                     this.showingCaseEntry = true;
@@ -4535,7 +4580,52 @@
                             this._unknownFPParsed = null;
                             this._unknownFPScanKey = null;
                             
-                            // Continue to case entry
+                            // Check for duplicate before proceeding to case entry
+                            const duplicate = await this.checkDuplicate(
+                                parsed.batchNumber, 
+                                parsed.palletNumber,
+                                parsed.stockCode,
+                                parsed.expiryDate
+                            );
+                            
+                            if (duplicate) {
+                                const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
+                                const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                                const existingCases = duplicate.actual_cases || duplicate.actualCases || 0;
+                                
+                                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                                
+                                // Store duplicate info for update flow
+                                parsed.isDuplicatePallet = true;
+                                parsed.existingScanId = duplicate.id;
+                                parsed.existingCases = existingCases;
+                                
+                                // Show modal to notify and confirm update
+                                this.showModal({
+                                    title: 'Pallet Already Scanned',
+                                    message: `This pallet has already been scanned!\n\n` +
+                                        `Stock Code: ${parsed.stockCode}\n` +
+                                        `Batch: ${parsed.batchNumber}\n` +
+                                        `Pallet: ${parsed.palletNumber}\n` +
+                                        `Current Cases: ${existingCases}\n\n` +
+                                        `Scanned by: ${scannedByName}\n` +
+                                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                                        `Would you like to update this pallet's count?`,
+                                    type: 'confirm',
+                                    confirmText: 'Update Count',
+                                    cancelText: 'Cancel',
+                                    onConfirm: () => {
+                                        // Proceed to case entry to update
+                                        this.pendingScanKeys.add(scanKey);
+                                        this.currentScan = parsed;
+                                        this.showingCaseEntry = true;
+                                        this.render();
+                                    }
+                                });
+                                return;
+                            }
+                            
+                            // No duplicate - continue to case entry
                             this.pendingScanKeys.add(scanKey);
                             this.currentScan = parsed;
                             this.showingCaseEntry = true;
@@ -4606,7 +4696,52 @@
                 this._unknownFPParsed = null;
                 this._unknownFPScanKey = null;
                 
-                // Now continue to case entry with the updated parsed data
+                // Check for duplicate before proceeding to case entry
+                const duplicate = await this.checkDuplicate(
+                    parsed.batchNumber, 
+                    parsed.palletNumber,
+                    parsed.stockCode,
+                    parsed.expiryDate
+                );
+                
+                if (duplicate) {
+                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
+                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                    const existingCases = duplicate.actual_cases || duplicate.actualCases || 0;
+                    
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    
+                    // Store duplicate info for update flow
+                    parsed.isDuplicatePallet = true;
+                    parsed.existingScanId = duplicate.id;
+                    parsed.existingCases = existingCases;
+                    
+                    // Show modal to notify and confirm update
+                    this.showModal({
+                        title: 'Pallet Already Scanned',
+                        message: `This pallet has already been scanned!\n\n` +
+                            `Stock Code: ${parsed.stockCode}\n` +
+                            `Batch: ${parsed.batchNumber}\n` +
+                            `Pallet: ${parsed.palletNumber}\n` +
+                            `Current Cases: ${existingCases}\n\n` +
+                            `Scanned by: ${scannedByName}\n` +
+                            `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                            `Would you like to update this pallet's count?`,
+                        type: 'confirm',
+                        confirmText: 'Update Count',
+                        cancelText: 'Cancel',
+                        onConfirm: () => {
+                            // Proceed to case entry to update
+                            this.pendingScanKeys.add(scanKey);
+                            this.currentScan = parsed;
+                            this.showingCaseEntry = true;
+                            this.render();
+                        }
+                    });
+                    return;
+                }
+                
+                // No duplicate - continue to case entry with the updated parsed data
                 this.pendingScanKeys.add(scanKey);
                 this.currentScan = parsed;
                 this.showingCaseEntry = true;
@@ -5024,18 +5159,18 @@
                     type: 'input',
                     confirmText: 'Next',
                     cancelText: 'No Expiry',
-                    onConfirm: (formData) => {
+                    onConfirm: async (formData) => {
                         const confirmedExpiry = formData.value?.trim() || suggestedExpiry;
                         // Convert DD/MM/YY to YYYY-MM-DD format
                         parsed.expiryDate = confirmedExpiry ? convertDMYtoYMD(confirmedExpiry) : null;
                         
                         // Next step: Description and Type
-                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                        await this._confirmDescriptionAndType(parsed, scanKey, stockCode);
                     },
-                    onCancel: () => {
+                    onCancel: async () => {
                         parsed.expiryDate = null;
                         // Continue to description
-                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                        await this._confirmDescriptionAndType(parsed, scanKey, stockCode);
                     }
                 });
                 
@@ -5046,7 +5181,7 @@
                 }, 100);
             }
             
-            _confirmDescriptionAndType(parsed, scanKey, stockCode) {
+            async _confirmDescriptionAndType(parsed, scanKey, stockCode) {
                 // Check if this is a known product with BOTH description AND product type
                 const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
                 const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
@@ -5058,7 +5193,7 @@
                     parsed.unitType = knownType.productType === 'Ingredient' ? 'kg' : 'units';
                     
                     // Skip to quantity entry
-                    this._finishNewItemFlow(parsed, scanKey);
+                    await this._finishNewItemFlow(parsed, scanKey);
                     return;
                 }
                 
@@ -5121,15 +5256,46 @@
                         parsed.unitType = isIngredient ? 'kg' : 'units';
                         
                         // 5. Continue to quantity entry
-                        this._finishNewItemFlow(parsed, scanKey);
+                        await this._finishNewItemFlow(parsed, scanKey);
                     }
                 });
             }
             
-            _finishNewItemFlow(parsed, scanKey) {
+            async _finishNewItemFlow(parsed, scanKey) {
                 // Clear temp storage
                 this._unknownStockParsed = null;
                 this._unknownStockScanKey = null;
+                
+                // Check for duplicate before proceeding to case entry
+                const duplicate = await this.checkDuplicate(
+                    parsed.batchNumber, 
+                    parsed.palletNumber,
+                    parsed.stockCode,
+                    parsed.expiryDate
+                );
+                
+                if (duplicate) {
+                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
+                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
+                    
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    
+                    const rescan = confirm(
+                        `DUPLICATE SCAN DETECTED!\n\n` +
+                        `Stock Code: ${parsed.stockCode}\n` +
+                        `Batch: ${parsed.batchNumber}\n` +
+                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
+                        `\nPreviously scanned by: ${scannedByName}\n` +
+                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
+                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                        `Do you want to rescan this item?`
+                    );
+                    
+                    if (!rescan) {
+                        return;
+                    }
+                }
                 
                 // Mark as ready for case entry
                 this.pendingScanKeys.add(scanKey);
