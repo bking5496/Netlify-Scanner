@@ -535,6 +535,40 @@
             }
         }
         
+        // Check if RM item with same stock code, batch, expiry AND quantity already exists
+        async function checkRMDuplicateQuantity(sessionId, stockCode, batchNumber, expiryDate, quantity) {
+            if (!supabase || !sessionId) return null;
+            
+            try {
+                let query = supabase
+                    .from('stock_scans')
+                    .select('id,scanned_at,scanned_by,device_id,actual_cases,location')
+                    .eq('session_id', sessionId)
+                    .eq('stock_code', stockCode)
+                    .eq('batch_number', batchNumber)
+                    .eq('actual_cases', quantity);
+                
+                if (expiryDate) {
+                    query = query.eq('expiry_date', expiryDate);
+                }
+                
+                const { data, error } = await query.limit(1);
+                
+                if (error) {
+                    console.error('Error checking RM duplicate quantity:', error);
+                    return null;
+                }
+                
+                if (data && data.length > 0) {
+                    return data[0];
+                }
+                return null;
+            } catch (err) {
+                console.error('Failed to check RM duplicate quantity:', err);
+                return null;
+            }
+        }
+        
         // Get unit type for a stock code from product_types table
         // If type is "ingredients" -> KG, otherwise -> UN (units)
         function getUnitTypeForStockCode(stockCode) {
@@ -2843,24 +2877,24 @@
                     return;
                 }
 
-                // Check for duplicate - include stock_code and expiry for RM
-                const duplicate = await this.checkDuplicate(
-                    parsed.batchNumber, 
-                    parsed.palletNumber,
-                    parsed.stockCode,
-                    parsed.expiryDate
-                );
-                
-                if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
-                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
-                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
-                    const existingCases = duplicate.actual_cases || duplicate.actualCases || 0;
+                // For FP 13-digit scans (with pallet number), check for duplicates
+                // A pallet with same batch+pallet cannot be scanned twice
+                // Note: 5-digit manual entries and RM items allow duplicates
+                if (sessionType === 'FP' && parsed.palletNumber) {
+                    const duplicate = await this.checkDuplicate(
+                        parsed.batchNumber, 
+                        parsed.palletNumber,
+                        parsed.stockCode,
+                        parsed.expiryDate
+                    );
                     
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    
-                    // For FP, pallet cannot be scanned twice - must update
-                    if (sessionType === 'FP') {
+                    if (duplicate) {
+                        const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
+                        const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
+                        const existingCases = duplicate.actual_cases || duplicate.actualCases || 0;
+                        
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                        
                         // Store duplicate info for update flow
                         parsed.isDuplicatePallet = true;
                         parsed.existingScanId = duplicate.id;
@@ -2868,7 +2902,7 @@
                         
                         // Show modal to notify and confirm update
                         this.showModal({
-                            title: '⚠️ Pallet Already Scanned',
+                            title: 'Pallet Already Scanned',
                             message: `This pallet has already been scanned!\n\n` +
                                 `Stock Code: ${parsed.stockCode}\n` +
                                 `Batch: ${parsed.batchNumber}\n` +
@@ -2888,22 +2922,6 @@
                                 this.render();
                             }
                         });
-                        return;
-                    }
-                    
-                    // For RM, keep existing behavior
-                    const rescan = confirm(
-                        `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
-                        `Stock Code: ${parsed.stockCode}\n` +
-                        `Batch: ${parsed.batchNumber}\n` +
-                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
-                        `\nPreviously scanned by: ${scannedByName}\n` +
-                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
-                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
-                        `Do you want to rescan this item?`
-                    );
-                    
-                    if (!rescan) {
                         return;
                     }
                 }
@@ -2975,38 +2993,8 @@
                     return;
                 }
                 
-                // All confirmations done - check for duplicate
-                const duplicate = await this.checkDuplicate(
-                    parsed.batchNumber, 
-                    parsed.palletNumber,
-                    parsed.stockCode,
-                    parsed.expiryDate
-                );
-                
-                if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
-                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
-                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
-                    
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    
-                    const rescan = confirm(
-                        `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
-                        `Stock Code: ${parsed.stockCode}\n` +
-                        `Batch: ${parsed.batchNumber}\n` +
-                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
-                        `\nPreviously scanned by: ${scannedByName}\n` +
-                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
-                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
-                        `Do you want to rescan this item?`
-                    );
-                    
-                    if (!rescan) {
-                        return;
-                    }
-                }
-                
-                // Proceed to case entry
+                // RM items allow duplicates (same item can be in different locations)
+                // Proceed directly to case entry
                 this.pendingScanKeys.add(scanKey);
                 this.currentScan = parsed;
                 this.showingCaseEntry = true;
@@ -3033,6 +3021,53 @@
                 const isUpdate = parsedData.isDuplicatePallet && parsedData.existingScanId;
                 
                 console.log('Saving scan:', { parsedData, actualCases, userName, sessionType, sessionId, supabaseEnabled: !!supabase, isUpdate });
+                
+                // For RM items, check if same item+batch+expiry+quantity already exists
+                // This catches potential duplicate entries (same count recorded twice)
+                if (sessionType === 'RM' && supabase && sessionId && !isUpdate) {
+                    const rmDuplicate = await checkRMDuplicateQuantity(
+                        sessionId,
+                        parsedData.stockCode,
+                        parsedData.batchNumber,
+                        parsedData.expiryDate,
+                        actualCases
+                    );
+                    
+                    if (rmDuplicate) {
+                        const timestamp = rmDuplicate.scanned_at || rmDuplicate.created_at;
+                        const scannedByName = rmDuplicate.scanned_by || 'Unknown';
+                        const locationInfo = rmDuplicate.location ? `\nLocation: ${rmDuplicate.location}` : '';
+                        const unitType = parsedData.unitType || getUnitTypeForStockCode(parsedData.stockCode);
+                        const unitLabel = unitType === 'kg' ? 'KG' : 'units';
+                        
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                        
+                        const confirmed = await new Promise(resolve => {
+                            this.showModal({
+                                title: 'Possible Duplicate Entry',
+                                message: `This exact recording already exists:\n\n` +
+                                    `Stock Code: ${parsedData.stockCode}\n` +
+                                    `Batch: ${parsedData.batchNumber}\n` +
+                                    `Quantity: ${actualCases} ${unitLabel}\n` +
+                                    (parsedData.expiryDate ? `Expiry: ${parsedData.expiryDate}\n` : '') +
+                                    locationInfo +
+                                    `\n\nRecorded by: ${scannedByName}\n` +
+                                    `at ${new Date(timestamp).toLocaleString()}\n\n` +
+                                    `Are you sure this is a NEW recording\n(different location/pallet)?`,
+                                type: 'confirm',
+                                confirmText: 'Yes, Save New',
+                                cancelText: 'Cancel',
+                                onConfirm: () => resolve(true),
+                                onCancel: () => resolve(false)
+                            });
+                        });
+                        
+                        if (!confirmed) {
+                            // User cancelled - don't save
+                            return;
+                        }
+                    }
+                }
                 
                 // Check if we have a valid session for Supabase saves
                 if (supabase && !sessionId) {
@@ -3427,7 +3462,7 @@
                 }
             }
             
-            async selectExpiryDate(expiryDate) {
+            selectExpiryDate(expiryDate) {
                 if (!this.pendingScan) return;
                 
                 // Set the selected expiry date
@@ -3436,46 +3471,11 @@
                 
                 this.showingExpirySelection = false;
                 
-                // Continue with duplicate check and case entry
+                // RM items allow duplicates (same item can be in different locations)
                 const parsed = this.pendingScan;
                 this.pendingScan = null;
                 
-                // Check for duplicate - include stock_code and expiry for RM
-                const duplicate = await this.checkDuplicate(
-                    parsed.batchNumber, 
-                    parsed.palletNumber,
-                    parsed.stockCode,
-                    parsed.expiryDate
-                );
-                
-                if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
-                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
-                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
-                    
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    
-                    const sessionType = this.activeStockTake?.sessionType || 'FP';
-                    const itemLabel = sessionType === 'RM' ? 'item' : 'pallet';
-                    
-                    const rescan = confirm(
-                        `⚠️ DUPLICATE SCAN DETECTED!\n\n` +
-                        `Stock Code: ${parsed.stockCode}\n` +
-                        `Batch: ${parsed.batchNumber}\n` +
-                        (sessionType !== 'RM' ? `Pallet: ${parsed.palletNumber}\n` : '') +
-                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
-                        `\nPreviously scanned by: ${scannedByName}\n` +
-                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
-                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
-                        `Do you want to rescan this ${itemLabel}?`
-                    );
-                    
-                    if (!rescan) {
-                        this.render();
-                        return;
-                    }
-                }
-                
+                // Proceed directly to case entry
                 this.currentScan = parsed;
                 this.showingCaseEntry = true;
                 this.render();
@@ -5159,18 +5159,18 @@
                     type: 'input',
                     confirmText: 'Next',
                     cancelText: 'No Expiry',
-                    onConfirm: async (formData) => {
+                    onConfirm: (formData) => {
                         const confirmedExpiry = formData.value?.trim() || suggestedExpiry;
                         // Convert DD/MM/YY to YYYY-MM-DD format
                         parsed.expiryDate = confirmedExpiry ? convertDMYtoYMD(confirmedExpiry) : null;
                         
                         // Next step: Description and Type
-                        await this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
                     },
-                    onCancel: async () => {
+                    onCancel: () => {
                         parsed.expiryDate = null;
                         // Continue to description
-                        await this._confirmDescriptionAndType(parsed, scanKey, stockCode);
+                        this._confirmDescriptionAndType(parsed, scanKey, stockCode);
                     }
                 });
                 
@@ -5181,7 +5181,7 @@
                 }, 100);
             }
             
-            async _confirmDescriptionAndType(parsed, scanKey, stockCode) {
+            _confirmDescriptionAndType(parsed, scanKey, stockCode) {
                 // Check if this is a known product with BOTH description AND product type
                 const knownRM = rawMaterialsDatabase[parsed.stockCode] || rawMaterialsDatabase[parsed.stockCode.toUpperCase()];
                 const knownType = productTypeDatabase[parsed.stockCode.toUpperCase()];
@@ -5193,7 +5193,7 @@
                     parsed.unitType = knownType.productType === 'Ingredient' ? 'kg' : 'units';
                     
                     // Skip to quantity entry
-                    await this._finishNewItemFlow(parsed, scanKey);
+                    this._finishNewItemFlow(parsed, scanKey);
                     return;
                 }
                 
@@ -5256,48 +5256,18 @@
                         parsed.unitType = isIngredient ? 'kg' : 'units';
                         
                         // 5. Continue to quantity entry
-                        await this._finishNewItemFlow(parsed, scanKey);
+                        this._finishNewItemFlow(parsed, scanKey);
                     }
                 });
             }
             
-            async _finishNewItemFlow(parsed, scanKey) {
+            _finishNewItemFlow(parsed, scanKey) {
                 // Clear temp storage
                 this._unknownStockParsed = null;
                 this._unknownStockScanKey = null;
                 
-                // Check for duplicate before proceeding to case entry
-                const duplicate = await this.checkDuplicate(
-                    parsed.batchNumber, 
-                    parsed.palletNumber,
-                    parsed.stockCode,
-                    parsed.expiryDate
-                );
-                
-                if (duplicate) {
-                    const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
-                    const scannedByName = duplicate.scanned_by || duplicate.scannedBy || 'Unknown';
-                    const deviceInfo = duplicate.device_id || duplicate.deviceId || '';
-                    
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    
-                    const rescan = confirm(
-                        `DUPLICATE SCAN DETECTED!\n\n` +
-                        `Stock Code: ${parsed.stockCode}\n` +
-                        `Batch: ${parsed.batchNumber}\n` +
-                        (parsed.expiryDate ? `Expiry: ${parsed.expiryDate}\n` : '') +
-                        `\nPreviously scanned by: ${scannedByName}\n` +
-                        (deviceInfo ? `Device: ${deviceInfo}\n` : '') +
-                        `at ${new Date(timestamp).toLocaleString()}\n\n` +
-                        `Do you want to rescan this item?`
-                    );
-                    
-                    if (!rescan) {
-                        return;
-                    }
-                }
-                
-                // Mark as ready for case entry
+                // RM items allow duplicates (same item can be in different locations)
+                // Proceed directly to case entry
                 this.pendingScanKeys.add(scanKey);
                 this.currentScan = parsed;
                 this.showingCaseEntry = true;
