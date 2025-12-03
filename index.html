@@ -1175,7 +1175,7 @@
                 
                 // Non-admins with a warehouse only see matching sessions
                 if (userWarehouse) {
-                    const sessionWarehouse = s.metadata?.warehouse || '';
+                    const sessionWarehouse = s.warehouse || s.metadata?.warehouse || '';
                     return sessionWarehouse === userWarehouse;
                 }
                 
@@ -1915,7 +1915,7 @@
                 }
             }
 
-            selectStockTakeType(type, userName) {
+            async selectStockTakeType(type, userName) {
                 if (!userName || userName.trim() === '') {
                     alert('Please enter your name');
                     return;
@@ -1926,18 +1926,22 @@
                 const role = getUserRole();
                 if (role !== 'admin' && !getUserWarehouse()) {
                     this.showModal({
-                        title: '📍 Select Your Warehouse',
+                        title: 'Select Your Warehouse',
                         message: `Please confirm your warehouse location:`,
                         type: 'confirm',
                         confirmText: 'PSA',
                         cancelText: 'PML',
-                        onConfirm: () => {
+                        onConfirm: async () => {
                             setUserWarehouse('PSA');
+                            // Refresh sessions from Supabase before showing list
+                            await this.refreshSessionsFromSupabase(true);
                             this.selectedStockTakeType = type;
                             this.render();
                         },
-                        onCancel: () => {
+                        onCancel: async () => {
                             setUserWarehouse('PML');
+                            // Refresh sessions from Supabase before showing list
+                            await this.refreshSessionsFromSupabase(true);
                             this.selectedStockTakeType = type;
                             this.render();
                         }
@@ -1945,6 +1949,8 @@
                     return;
                 }
                 
+                // Refresh sessions from Supabase before showing list
+                await this.refreshSessionsFromSupabase(true);
                 this.selectedStockTakeType = type;
                 this.render();
             }
