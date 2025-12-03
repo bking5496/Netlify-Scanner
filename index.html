@@ -493,13 +493,16 @@
         async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, stockCode, expiryDate = null, palletNumber = null) {
             if (!supabase || !sessionId) return null;
             
+            console.log('checkDuplicateInSupabase called:', { sessionId, sessionType, batchNumber, stockCode, expiryDate, palletNumber });
+            
             try {
                 // All scans are in stock_scans table - select fields needed for duplicate display
+                const cleanBatch = String(batchNumber).trim();
                 let query = supabase
                     .from('stock_scans')
                     .select('id,scanned_at,created_at,scanned_by,device_id,actual_cases')
                     .eq('session_id', sessionId)
-                    .eq('batch_number', batchNumber);
+                    .eq('batch_number', cleanBatch);
                 
                 // For RM, check stock_code and optionally expiry_date
                 if (sessionType === 'RM') {
@@ -510,11 +513,15 @@
                 } else {
                     // For FP, check pallet_number
                     if (palletNumber) {
-                        query = query.eq('pallet_number', palletNumber);
+                        const cleanPallet = String(palletNumber).trim();
+                        console.log('Adding pallet_number filter:', cleanPallet);
+                        query = query.eq('pallet_number', cleanPallet);
                     }
                 }
                 
                 const { data, error } = await query.limit(1);
+                
+                console.log('Duplicate check query result:', { data, error });
                 
                 if (error) {
                     console.error('Error checking duplicate:', error);
@@ -2577,6 +2584,7 @@
             }
 
             async checkDuplicate(batchNumber, palletNumber, stockCode = null, expiryDate = null) {
+                console.log('checkDuplicate called with:', { batchNumber, palletNumber, stockCode, expiryDate, typeof_pallet: typeof palletNumber });
                 if (supabase && this.activeStockTake?.id) {
                     // Live check against Supabase stock_scans for all devices in this session
                     const sessionType = this.activeStockTake?.sessionType || 'FP';
@@ -2881,12 +2889,14 @@
                 // A pallet with same batch+pallet cannot be scanned twice
                 // Note: 5-digit manual entries and RM items allow duplicates
                 if (sessionType === 'FP' && parsed.palletNumber) {
+                    console.log('FP duplicate check - batch:', parsed.batchNumber, 'pallet:', parsed.palletNumber);
                     const duplicate = await this.checkDuplicate(
                         parsed.batchNumber, 
                         parsed.palletNumber,
                         parsed.stockCode,
                         parsed.expiryDate
                     );
+                    console.log('FP duplicate check result:', duplicate);
                     
                     if (duplicate) {
                         const timestamp = duplicate.scanned_at || duplicate.created_at || duplicate.date + ' ' + duplicate.time;
