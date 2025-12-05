@@ -278,6 +278,115 @@
                 .forEach(key => localStorage.removeItem(key));
         };
 
+        // ===== OFFLINE SYNC QUEUE =====
+        // Stores scans that were made offline and need to be synced when back online
+        const offlineSyncQueue = {
+            QUEUE_KEY: 'offlineSyncQueue',
+            
+            // Get all pending scans from queue
+            getQueue() {
+                const queue = localStorage.getItem(this.QUEUE_KEY);
+                return queue ? JSON.parse(queue) : [];
+            },
+            
+            // Add a scan to the offline queue
+            addToQueue(scanData) {
+                const queue = this.getQueue();
+                const queueItem = {
+                    id: 'offline_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                    timestamp: Date.now(),
+                    data: scanData,
+                    retryCount: 0
+                };
+                queue.push(queueItem);
+                localStorage.setItem(this.QUEUE_KEY, JSON.stringify(queue));
+                console.log('Added scan to offline queue:', queueItem.id);
+                return queueItem.id;
+            },
+            
+            // Remove a scan from the queue (after successful sync)
+            removeFromQueue(queueId) {
+                const queue = this.getQueue();
+                const newQueue = queue.filter(item => item.id !== queueId);
+                localStorage.setItem(this.QUEUE_KEY, JSON.stringify(newQueue));
+                console.log('Removed scan from offline queue:', queueId);
+            },
+            
+            // Update retry count for a queued item
+            incrementRetry(queueId) {
+                const queue = this.getQueue();
+                const item = queue.find(i => i.id === queueId);
+                if (item) {
+                    item.retryCount++;
+                    item.lastRetry = Date.now();
+                    localStorage.setItem(this.QUEUE_KEY, JSON.stringify(queue));
+                }
+            },
+            
+            // Get count of pending items
+            getPendingCount() {
+                return this.getQueue().length;
+            },
+            
+            // Clear the entire queue
+            clearQueue() {
+                localStorage.removeItem(this.QUEUE_KEY);
+            }
+        };
+
+        // Sync all offline scans to Supabase
+        async function syncOfflineScans() {
+            if (!supabase || !navigator.onLine) {
+                console.log('Cannot sync - offline or no Supabase');
+                return { synced: 0, failed: 0 };
+            }
+            
+            const queue = offlineSyncQueue.getQueue();
+            if (queue.length === 0) {
+                console.log('No offline scans to sync');
+                return { synced: 0, failed: 0 };
+            }
+            
+            console.log(`Syncing ${queue.length} offline scans...`);
+            let synced = 0;
+            let failed = 0;
+            
+            for (const item of queue) {
+                // Skip items that have failed too many times
+                if (item.retryCount >= 5) {
+                    console.warn('Skipping item with too many retries:', item.id);
+                    failed++;
+                    continue;
+                }
+                
+                try {
+                    const record = item.data;
+                    
+                    const { data, error } = await supabase
+                        .from('stock_scans')
+                        .insert([record])
+                        .select();
+                    
+                    if (error) {
+                        console.error('Failed to sync offline scan:', error);
+                        offlineSyncQueue.incrementRetry(item.id);
+                        failed++;
+                    } else {
+                        console.log('Successfully synced offline scan:', item.id);
+                        offlineSyncQueue.removeFromQueue(item.id);
+                        synced++;
+                    }
+                } catch (err) {
+                    console.error('Error syncing offline scan:', err);
+                    offlineSyncQueue.incrementRetry(item.id);
+                    failed++;
+                }
+            }
+            
+            console.log(`Offline sync complete: ${synced} synced, ${failed} failed`);
+            return { synced, failed };
+        }
+
         // Product Database - loaded from Supabase or localStorage cache
         // FP = Finished Products (keyed by batchNumber)
         let productDatabase = JSON.parse(localStorage.getItem('productDatabase') || '{}');
@@ -1932,6 +2041,39 @@
                     return;
                 }
 
+                // Back online - sync any offline scans first
+                const pendingCount = offlineSyncQueue.getPendingCount();
+                if (pendingCount > 0) {
+                    console.log(`Back online! Syncing ${pendingCount} offline scans...`);
+                    this.showModal({
+                        title: '🔄 Syncing Offline Data',
+                        message: `You're back online. Syncing ${pendingCount} offline scan${pendingCount > 1 ? 's' : ''}...`,
+                        type: 'info'
+                    });
+                    
+                    const result = await syncOfflineScans();
+                    
+                    // Close info modal and show result
+                    this.closeModal();
+                    
+                    if (result.synced > 0 || result.failed > 0) {
+                        const message = result.failed > 0
+                            ? `Synced ${result.synced} scan${result.synced !== 1 ? 's' : ''}. ${result.failed} failed (will retry).`
+                            : `Successfully synced ${result.synced} offline scan${result.synced !== 1 ? 's' : ''}!`;
+                        
+                        this.showModal({
+                            title: result.failed > 0 ? '⚠️ Sync Partial' : '✅ Sync Complete',
+                            message: message,
+                            type: result.failed > 0 ? 'warning' : 'success'
+                        });
+                        
+                        // Auto-close success modal after 2 seconds
+                        if (result.failed === 0) {
+                            setTimeout(() => this.closeModal(), 2000);
+                        }
+                    }
+                }
+
                 if (supabaseSessionsEnabled && this.activeStockTake?.id) {
                     const hbStatus = this.activeStockTake.status === 'paused' ? 'paused' : 'active';
                     this.startHeartbeat(hbStatus);
@@ -1939,6 +2081,59 @@
 
                 await this.refreshSessionsFromSupabase(true);
                 await this.loadScans();
+                this.render();
+            }
+
+            async manualSyncOffline() {
+                const pendingCount = offlineSyncQueue.getPendingCount();
+                if (pendingCount === 0) {
+                    this.showModal({
+                        title: '✅ All Synced',
+                        message: 'No offline scans to sync.',
+                        type: 'success'
+                    });
+                    setTimeout(() => this.closeModal(), 2000);
+                    return;
+                }
+                
+                if (!navigator.onLine) {
+                    this.showModal({
+                        title: '📴 Still Offline',
+                        message: `You have ${pendingCount} scan${pendingCount !== 1 ? 's' : ''} waiting.\n\nThey will sync automatically when you're back online.`,
+                        type: 'warning'
+                    });
+                    return;
+                }
+                
+                this.showModal({
+                    title: '🔄 Syncing...',
+                    message: `Syncing ${pendingCount} offline scan${pendingCount !== 1 ? 's' : ''}...`,
+                    type: 'info'
+                });
+                
+                const result = await syncOfflineScans();
+                this.closeModal();
+                
+                if (result.synced > 0 || result.failed > 0) {
+                    const message = result.failed > 0
+                        ? `Synced ${result.synced} scan${result.synced !== 1 ? 's' : ''}. ${result.failed} failed (will retry).`
+                        : `Successfully synced ${result.synced} scan${result.synced !== 1 ? 's' : ''}!`;
+                    
+                    this.showModal({
+                        title: result.failed > 0 ? '⚠️ Sync Partial' : '✅ Sync Complete',
+                        message: message,
+                        type: result.failed > 0 ? 'warning' : 'success'
+                    });
+                    
+                    // Reload scans to show the synced items
+                    await this.loadScans();
+                    
+                    // Auto-close success modal after 2 seconds
+                    if (result.failed === 0) {
+                        setTimeout(() => this.closeModal(), 2000);
+                    }
+                }
+                
                 this.render();
             }
 
@@ -3193,28 +3388,28 @@
                     } else {
                         // INSERT new scan
                         console.log('Saving to Supabase with sessionId:', sessionId);
+                        const record = {
+                            session_id: sessionId,
+                            take_date: this.currentTakeDate,
+                            batch_number: parsedData.batchNumber,
+                            stock_code: parsedData.stockCode,
+                            description: parsedData.description,
+                            scanned_by: userName,
+                            device_id: DEVICE_ID,
+                            session_type: sessionType,
+                            location: locationPayload.location,
+                            site: locationPayload.site,
+                            aisle: locationPayload.aisle,
+                            rack: locationPayload.rack,
+                            unit_type: parsedData.unitType || (sessionType === 'RM' ? getUnitTypeForStockCode(parsedData.stockCode) : 'cases'),
+                            actual_cases: actualCases,
+                            pallet_number: parsedData.palletNumber || null,
+                            cases_on_pallet: parsedData.casesOnPallet || null,
+                            expiry_date: convertDMYtoYMD(parsedData.expiryDate) || null,
+                            raw_code: parsedData.raw
+                        };
+                        
                         try {
-                            const record = {
-                                session_id: sessionId,
-                                take_date: this.currentTakeDate,
-                                batch_number: parsedData.batchNumber,
-                                stock_code: parsedData.stockCode,
-                                description: parsedData.description,
-                                scanned_by: userName,
-                                device_id: DEVICE_ID,
-                                session_type: sessionType,
-                                location: locationPayload.location,
-                                site: locationPayload.site,
-                                aisle: locationPayload.aisle,
-                                rack: locationPayload.rack,
-                                unit_type: parsedData.unitType || (sessionType === 'RM' ? getUnitTypeForStockCode(parsedData.stockCode) : 'cases'),
-                                actual_cases: actualCases,
-                                pallet_number: parsedData.palletNumber || null,
-                                cases_on_pallet: parsedData.casesOnPallet || null,
-                                expiry_date: convertDMYtoYMD(parsedData.expiryDate) || null,
-                                raw_code: parsedData.raw
-                            };
-                            
                             const { data, error } = await supabase
                                 .from('stock_scans')
                                 .insert([record])
@@ -3230,9 +3425,25 @@
                             await logClientEvent('scan-insert', 'info', sessionId, { scanId: data?.[0]?.id || null });
                         } catch (err) {
                             console.error('Failed to save to Supabase:', err);
-                            await logClientEvent('scan-insert-failed', 'error', sessionId, { message: err.message });
-                            alert('Failed to save scan to database. Please check your connection.');
-                            throw err;
+                            
+                            // Save to offline queue instead of losing the scan
+                            offlineSyncQueue.addToQueue(record);
+                            const pendingCount = offlineSyncQueue.getPendingCount();
+                            
+                            this.showModal({
+                                title: '📴 Saved Offline',
+                                message: `Network error - scan saved locally.\n\nIt will sync automatically when you're back online.\n\n(${pendingCount} scan${pendingCount !== 1 ? 's' : ''} pending)`,
+                                type: 'warning'
+                            });
+                            
+                            // Trigger haptic feedback for offline save
+                            this.triggerHaptic('warning');
+                            
+                            // Auto-close modal after 3 seconds
+                            setTimeout(() => this.closeModal(), 3000);
+                            
+                            // Don't throw - we've saved it offline
+                            return;
                         }
                     }
                 } else {
@@ -7561,10 +7772,23 @@
                                                 }
                                                 return '';
                                             })()}
-                                            <span class="text-xs font-medium flex items-center gap-1 ${this.isOfflineMode() ? 'text-slate-500' : 'text-emerald-600'}">
-                                                <span class="w-1.5 h-1.5 rounded-full ${this.isOfflineMode() ? 'bg-slate-400' : 'bg-emerald-500'} animate-pulse"></span>
-                                                ${this.isOfflineMode() ? 'Offline cache' : 'Online'}
-                                            </span>
+                                            ${(() => {
+                                                const pendingCount = offlineSyncQueue.getPendingCount();
+                                                if (pendingCount > 0) {
+                                                    return `
+                                                        <button onclick="app.manualSyncOffline()" class="text-xs font-medium flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors">
+                                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                            ${pendingCount} pending sync
+                                                        </button>
+                                                    `;
+                                                }
+                                                return `
+                                                    <span class="text-xs font-medium flex items-center gap-1 ${this.isOfflineMode() ? 'text-slate-500' : 'text-emerald-600'}">
+                                                        <span class="w-1.5 h-1.5 rounded-full ${this.isOfflineMode() ? 'bg-slate-400' : 'bg-emerald-500'} animate-pulse"></span>
+                                                        ${this.isOfflineMode() ? 'Offline' : 'Online'}
+                                                    </span>
+                                                `;
+                                            })()}
                                         </div>
                                     </div>
                                 </div>
@@ -7746,6 +7970,23 @@
 
         const app = new ScannerApp();
         window.app = app;
+
+        // On startup, check for pending offline scans and sync if online
+        (async () => {
+            const pendingCount = offlineSyncQueue.getPendingCount();
+            if (pendingCount > 0 && navigator.onLine && supabase) {
+                console.log(`Found ${pendingCount} offline scans on startup, syncing...`);
+                const result = await syncOfflineScans();
+                if (result.synced > 0) {
+                    console.log(`Startup sync: synced ${result.synced} scans`);
+                    // Reload scans if we're in a session
+                    if (app.activeStockTake?.id) {
+                        await app.loadScans();
+                        app.render();
+                    }
+                }
+            }
+        })();
 
         window.addEventListener('online', () => {
             if (window.app?.handleConnectivityChange) {
