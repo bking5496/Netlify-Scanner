@@ -2245,10 +2245,253 @@
             }
 
             clearLocation() {
+                this.activeLocation = null;
                 this.sessionSettings.selectedWarehouseLocation = null;
                 this.sessionSettings.currentLocation = '';
+                this.sessionSettings.locationScanningEnabled = false;
                 saveSessionSettings(this.sessionSettings);
                 this.render();
+            }
+
+            // Show/hide Location Management page
+            showLocationManagement() {
+                this.showingLocationManagement = true;
+                // Load locations from Supabase
+                loadLocationsFromSupabase(true).then(() => this.render());
+            }
+
+            hideLocationManagement() {
+                this.showingLocationManagement = false;
+                this.render();
+            }
+
+            // Show/hide QR Generator page
+            showQRGenerator() {
+                this.showingQRGenerator = true;
+                this._selectedLocationsForQR = new Set();
+                // Ensure locations are loaded
+                loadLocationsFromSupabase(true).then(() => this.render());
+            }
+
+            hideQRGenerator() {
+                this.showingQRGenerator = false;
+                this._selectedLocationsForQR = null;
+                this.render();
+            }
+
+            // Toggle location selection for QR generation
+            toggleLocationForQR(locationCode) {
+                if (!this._selectedLocationsForQR) this._selectedLocationsForQR = new Set();
+                if (this._selectedLocationsForQR.has(locationCode)) {
+                    this._selectedLocationsForQR.delete(locationCode);
+                } else {
+                    this._selectedLocationsForQR.add(locationCode);
+                }
+                this.render();
+            }
+
+            // Select all locations for QR generation
+            selectAllLocationsForQR() {
+                const locations = getWarehouseLocations();
+                this._selectedLocationsForQR = new Set(locations.map(l => l.location_code));
+                this.render();
+            }
+
+            // Clear all location selections
+            clearLocationSelections() {
+                this._selectedLocationsForQR = new Set();
+                this.render();
+            }
+
+            // Generate and show QR codes for printing
+            async generateQRCodes() {
+                const selectedCodes = Array.from(this._selectedLocationsForQR || []);
+                if (selectedCodes.length === 0) {
+                    alert('Please select at least one location');
+                    return;
+                }
+
+                // Generate QR codes and open print window
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    alert('Please allow pop-ups to print QR codes');
+                    return;
+                }
+
+                printWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Location QR Codes</title>
+                        <style>
+                            * { margin: 0; padding: 0; box-sizing: border-box; }
+                            body { font-family: Arial, sans-serif; padding: 20px; }
+                            .qr-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+                            .qr-item { 
+                                border: 2px solid #333; 
+                                padding: 15px; 
+                                text-align: center;
+                                page-break-inside: avoid;
+                            }
+                            .qr-code { width: 150px; height: 150px; margin: 0 auto 10px; }
+                            .qr-label { font-size: 18px; font-weight: bold; }
+                            .qr-type { font-size: 12px; color: #666; }
+                            @media print {
+                                .no-print { display: none; }
+                                .qr-grid { gap: 10px; }
+                            }
+                        </style>
+                        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+                    </head>
+                    <body>
+                        <div class="no-print" style="margin-bottom: 20px;">
+                            <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">🖨️ Print QR Codes</button>
+                            <button onclick="window.close()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; margin-left: 10px;">Close</button>
+                        </div>
+                        <div class="qr-grid" id="qr-container"></div>
+                        <script>
+                            const locations = ${JSON.stringify(selectedCodes)};
+                            const container = document.getElementById('qr-container');
+                            
+                            locations.forEach((code, index) => {
+                                const item = document.createElement('div');
+                                item.className = 'qr-item';
+                                
+                                const canvas = document.createElement('canvas');
+                                canvas.className = 'qr-code';
+                                canvas.id = 'qr-' + index;
+                                
+                                const label = document.createElement('div');
+                                label.className = 'qr-label';
+                                label.textContent = code;
+                                
+                                const type = document.createElement('div');
+                                type.className = 'qr-type';
+                                type.textContent = code.startsWith('RACK-') ? 'Pallet Rack' : 'Floor Space';
+                                
+                                item.appendChild(canvas);
+                                item.appendChild(label);
+                                item.appendChild(type);
+                                container.appendChild(item);
+                                
+                                // Generate QR code
+                                QRCode.toCanvas(canvas, code, { 
+                                    width: 150,
+                                    margin: 1,
+                                    errorCorrectionLevel: 'H'
+                                });
+                            });
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            }
+
+            // Add a new rack location via modal
+            async addRackLocation() {
+                this.showModal({
+                    title: '➕ Add Rack Location',
+                    message: 'Enter rack location details:',
+                    type: 'form',
+                    fields: [
+                        { name: 'rackNumber', label: 'Rack Number (01-99)', placeholder: '01', required: true },
+                        { name: 'face', label: 'Face', type: 'select', options: [{ value: 'F', label: 'Front' }, { value: 'B', label: 'Back' }], required: true },
+                        { name: 'row', label: 'Row (A-Z)', placeholder: 'A', required: true },
+                        { name: 'column', label: 'Column (1-99)', type: 'number', placeholder: '1', required: true },
+                        { name: 'warehouse', label: 'Warehouse', type: 'select', options: [{ value: 'PSA', label: 'PSA' }, { value: 'PML', label: 'PML' }] },
+                        { name: 'description', label: 'Description (optional)', placeholder: 'e.g., Aisle 1 near dock' }
+                    ],
+                    confirmText: 'Add Location',
+                    onConfirm: async (data) => {
+                        const rackNumber = String(data.rackNumber).padStart(2, '0');
+                        const face = data.face || 'F';
+                        const row = (data.row || 'A').toUpperCase();
+                        const column = parseInt(data.column) || 1;
+                        const locationCode = buildLocationCode('rack', { rackNumber, face, row, column });
+
+                        const result = await addLocationToSupabase({
+                            location_code: locationCode,
+                            location_type: 'rack',
+                            rack_number: rackNumber,
+                            rack_face: face,
+                            rack_row: row,
+                            rack_column: column,
+                            warehouse: data.warehouse || null,
+                            description: data.description || null
+                        });
+
+                        if (result.success) {
+                            this.triggerHaptic('success');
+                            this.render();
+                        } else {
+                            alert(result.error || 'Failed to add location');
+                        }
+                    }
+                });
+            }
+
+            // Add a new floor location via modal
+            async addFloorLocationDB() {
+                this.showModal({
+                    title: '➕ Add Floor Location',
+                    message: 'Enter floor location details:',
+                    type: 'form',
+                    fields: [
+                        { name: 'zone', label: 'Zone Code (e.g., A1)', placeholder: 'A1', required: true },
+                        { name: 'warehouse', label: 'Warehouse', type: 'select', options: [{ value: 'PSA', label: 'PSA' }, { value: 'PML', label: 'PML' }] },
+                        { name: 'description', label: 'Description (optional)', placeholder: 'e.g., Staging area' }
+                    ],
+                    confirmText: 'Add Location',
+                    onConfirm: async (data) => {
+                        const zone = (data.zone || '').toUpperCase();
+                        if (!zone) {
+                            alert('Zone code is required');
+                            return;
+                        }
+                        const locationCode = buildLocationCode('floor', { zone });
+
+                        const result = await addLocationToSupabase({
+                            location_code: locationCode,
+                            location_type: 'floor',
+                            floor_zone: zone,
+                            warehouse: data.warehouse || null,
+                            description: data.description || null
+                        });
+
+                        if (result.success) {
+                            this.triggerHaptic('success');
+                            this.render();
+                        } else {
+                            alert(result.error || 'Failed to add location');
+                        }
+                    }
+                });
+            }
+
+            // Delete a location from the database
+            async deleteLocationDB(id) {
+                const confirmed = await new Promise(resolve => {
+                    this.showModal({
+                        title: 'Delete Location',
+                        message: 'Are you sure you want to delete this location?',
+                        type: 'confirm',
+                        confirmText: 'Delete',
+                        cancelText: 'Cancel',
+                        onConfirm: () => resolve(true),
+                        onCancel: () => resolve(false)
+                    });
+                });
+
+                if (!confirmed) return;
+
+                const result = await deleteLocationFromSupabase(id);
+                if (result.success) {
+                    this.triggerHaptic('heavy');
+                    this.render();
+                } else {
+                    alert(result.error || 'Failed to delete location');
+                }
             }
 
             // ===== END WAREHOUSE LOCATION SYSTEM =====
