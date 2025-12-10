@@ -2328,8 +2328,33 @@
 
             // Select all locations for QR generation
             selectAllLocationsForQR() {
-                const locations = getWarehouseLocations();
-                this._selectedLocationsForQR = new Set(locations.map(l => l.location_code));
+                // Build locations from session settings
+                const warehouseConfig = this.sessionSettings.warehouseConfig || { racks: [], floorLocations: [] };
+                const racks = warehouseConfig.racks || [];
+                const floorLocations = warehouseConfig.floorLocations || [];
+
+                const allCodes = [];
+
+                // Add rack positions
+                racks.forEach(rack => {
+                    const rackName = rack.name || rack.id;
+                    const columns = rack.columns || 1;
+                    const levels = rack.levels || 1;
+
+                    for (let level = 1; level <= levels; level++) {
+                        for (let col = 1; col <= columns; col++) {
+                            const levelLetter = String.fromCharCode(64 + level);
+                            allCodes.push(`${rackName}-${levelLetter}${col}`);
+                        }
+                    }
+                });
+
+                // Add floor locations
+                floorLocations.forEach(floor => {
+                    allCodes.push(`FLOOR-${floor}`);
+                });
+
+                this._selectedLocationsForQR = new Set(allCodes);
                 this.render();
             }
 
@@ -7110,7 +7135,45 @@
                 // Note: Session refresh moved to explicit calls only to avoid blocking render
                 // ===== QR CODE GENERATOR PAGE (Admin Only) =====
                 if (this.showingQRGenerator) {
-                    const locations = getWarehouseLocations();
+                    // Get locations from session settings (warehouse setup)
+                    const warehouseConfig = this.sessionSettings.warehouseConfig || { racks: [], floorLocations: [] };
+                    const racks = warehouseConfig.racks || [];
+                    const floorLocations = warehouseConfig.floorLocations || [];
+
+                    // Build location list from racks and floor locations
+                    const locations = [];
+
+                    // Add rack locations - generate position codes for each rack
+                    racks.forEach(rack => {
+                        const rackName = rack.name || rack.id;
+                        const rows = rack.rows || 1;
+                        const columns = rack.columns || 1;
+                        const levels = rack.levels || 1;
+
+                        // Generate location codes for each position in the rack
+                        for (let level = 1; level <= levels; level++) {
+                            for (let col = 1; col <= columns; col++) {
+                                const levelLetter = String.fromCharCode(64 + level); // 1=A, 2=B, etc.
+                                const locationCode = `${rackName}-${levelLetter}${col}`;
+                                locations.push({
+                                    code: locationCode,
+                                    type: 'rack',
+                                    label: `${rackName} Level ${levelLetter} Position ${col}`
+                                });
+                            }
+                        }
+                    });
+
+                    // Add floor locations
+                    floorLocations.forEach(floor => {
+                        const locationCode = `FLOOR-${floor}`;
+                        locations.push({
+                            code: locationCode,
+                            type: 'floor',
+                            label: `Floor ${floor}`
+                        });
+                    });
+
                     const selectedSet = this._selectedLocationsForQR || new Set();
 
                     updateView(`
@@ -7142,29 +7205,64 @@
                                     </button>
                                 </div>
                                 
-                                <!-- Location Selection -->
-                                <div class="bg-white rounded-2xl shadow-lg shadow-slate-200 overflow-hidden">
-                                    <div class="bg-slate-50 px-4 py-3 border-b border-slate-100">
-                                        <h2 class="font-bold text-slate-800">Select Locations (${locations.length} available)</h2>
+                                ${locations.length === 0 ? `
+                                    <div class="bg-white rounded-2xl shadow-lg shadow-slate-200 p-8 text-center">
+                                        <div class="text-4xl mb-4">📦</div>
+                                        <h3 class="text-lg font-bold text-slate-700">No Locations Configured</h3>
+                                        <p class="text-slate-500 mt-2">Add racks and floor locations in Settings first.</p>
+                                        <button onclick="app.hideQRGenerator(); app.showSettings();" class="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-xl font-bold transition-colors">
+                                            Go to Settings
+                                        </button>
                                     </div>
-                                    <div class="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-                                        ${locations.length === 0 ? `
-                                            <div class="p-4 text-center text-slate-400">No locations defined. Add locations first.</div>
-                                        ` : locations.map(loc => `
-                                            <label class="p-4 flex items-center gap-3 hover:bg-slate-50 cursor-pointer">
-                                                <input type="checkbox" 
-                                                    ${selectedSet.has(loc.location_code) ? 'checked' : ''}
-                                                    onchange="app.toggleLocationForQR('${loc.location_code}')"
-                                                    class="w-5 h-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                                                />
-                                                <div class="flex-1">
-                                                    <div class="font-bold text-slate-900">${loc.location_code}</div>
-                                                    <div class="text-xs text-slate-500">${loc.location_type === 'rack' ? '🏭 Rack' : '📦 Floor'} ${loc.warehouse ? '• ' + loc.warehouse : ''}</div>
-                                                </div>
-                                            </label>
-                                        `).join('')}
+                                ` : `
+                                    <!-- Rack Locations -->
+                                    ${racks.length > 0 ? `
+                                    <div class="bg-white rounded-2xl shadow-lg shadow-slate-200 overflow-hidden mb-4">
+                                        <div class="bg-blue-50 px-4 py-3 border-b border-blue-100">
+                                            <h2 class="font-bold text-blue-800">🏭 Rack Locations</h2>
+                                        </div>
+                                        <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                                            ${locations.filter(l => l.type === 'rack').map(loc => `
+                                                <label class="p-4 flex items-center gap-3 hover:bg-slate-50 cursor-pointer">
+                                                    <input type="checkbox" 
+                                                        ${selectedSet.has(loc.code) ? 'checked' : ''}
+                                                        onchange="app.toggleLocationForQR('${loc.code}')"
+                                                        class="w-5 h-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                    />
+                                                    <div class="flex-1">
+                                                        <div class="font-bold text-slate-900">${loc.code}</div>
+                                                        <div class="text-xs text-slate-500">${loc.label}</div>
+                                                    </div>
+                                                </label>
+                                            `).join('')}
+                                        </div>
                                     </div>
-                                </div>
+                                    ` : ''}
+                                    
+                                    <!-- Floor Locations -->
+                                    ${floorLocations.length > 0 ? `
+                                    <div class="bg-white rounded-2xl shadow-lg shadow-slate-200 overflow-hidden">
+                                        <div class="bg-teal-50 px-4 py-3 border-b border-teal-100">
+                                            <h2 class="font-bold text-teal-800">📦 Floor Locations</h2>
+                                        </div>
+                                        <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                                            ${locations.filter(l => l.type === 'floor').map(loc => `
+                                                <label class="p-4 flex items-center gap-3 hover:bg-slate-50 cursor-pointer">
+                                                    <input type="checkbox" 
+                                                        ${selectedSet.has(loc.code) ? 'checked' : ''}
+                                                        onchange="app.toggleLocationForQR('${loc.code}')"
+                                                        class="w-5 h-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                                    />
+                                                    <div class="flex-1">
+                                                        <div class="font-bold text-slate-900">${loc.code}</div>
+                                                        <div class="text-xs text-slate-500">${loc.label}</div>
+                                                    </div>
+                                                </label>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                    ` : ''}
+                                `}
                             </div>
                         </div>
                     `);
