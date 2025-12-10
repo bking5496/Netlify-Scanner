@@ -3539,26 +3539,15 @@
                         this.sessionSettings.locationScanningEnabled = true;
                         saveSessionSettings(this.sessionSettings);
 
-                        // Find location details from cache (if exists)
-                        const locationDetails = getLocationByCode(locationCode);
-                        const locationType = parsed.type === 'rack' ? 'Rack' : 'Floor';
-                        const locationDesc = locationDetails?.description || '';
-
-                        // Show success feedback
+                        // Simple vibrate feedback - no modal, just confirm with haptic
                         this.triggerHaptic('success');
-                        this.showModal({
-                            title: '📍 Location Set',
-                            message: `${locationType} location scanned:\n\n${locationCode}${locationDesc ? '\n' + locationDesc : ''}\n\nAll scans will now be tagged with this location.\nScan another location QR to change.`,
-                            type: 'success'
-                        });
 
-                        // Auto-close modal after 2 seconds and restart scanner
-                        setTimeout(() => {
-                            this.closeModal();
-                            this.render();
-                            // Auto-restart scanner for continuous scanning
-                            setTimeout(() => this.startScanning(), 300);
-                        }, 2000);
+                        // Log location set for debugging
+                        console.log('📍 Location set:', locationCode);
+
+                        // Immediately restart scanner for continuous scanning
+                        this.render();
+                        setTimeout(() => this.startScanning(), 300);
 
                         return;
                     }
