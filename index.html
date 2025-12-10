@@ -6926,6 +6926,8 @@
                     !this.showingProductDB &&
                     !this.showingRMProductDB &&
                     !this.showingSessionHistory &&
+                    !this.showingLocationManagement &&
+                    !this.showingQRGenerator &&
                     !this.isScanning;
 
                 if (!shouldShow) {
@@ -6936,28 +6938,28 @@
                 const isRM = this.activeStockTake?.sessionType === 'RM';
                 const isFP = this.activeStockTake?.sessionType === 'FP';
 
-                // Build buttons HTML
-                let buttonsHtml = '';
-
-                // FP only: Manual 5-digit batch entry button (bottom-left)
-                if (isFP) {
-                    buttonsHtml += `
-                        <button onclick="app.showManual5DigitEntry()" class="fixed bottom-6 left-6 w-14 h-14 bg-amber-500 hover:bg-amber-600 shadow-amber-200 active:scale-95 text-white rounded-full shadow-xl z-[9999] flex items-center justify-center transition-all" title="Manual 5-digit entry">
-                            <span class="text-lg font-bold">5#</span>
+                // Stack buttons vertically on the right side
+                container.innerHTML = `
+                    <div class="fixed bottom-6 right-6 z-[9999] flex flex-col items-center gap-3">
+                        ${isFP ? `
+                        <!-- Manual 5-digit entry button (above scan) -->
+                        <button onclick="app.showManual5DigitEntry()" 
+                            class="w-12 h-12 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-full shadow-lg shadow-amber-200/50 flex items-center justify-center transition-all border-2 border-amber-400"
+                            title="Manual 5-digit entry">
+                            <span class="text-sm font-bold">5#</span>
                         </button>
-                    `;
-                }
-
-                // Scan button (bottom-right) - always shown
-                buttonsHtml += `
-                    <button onclick="app.startScanning()" class="fixed bottom-6 right-6 w-16 h-16 ${isRM ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'} active:scale-95 text-white rounded-full shadow-xl z-[9999] flex items-center justify-center transition-all">
-                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
-                        </svg>
-                    </button>
+                        ` : ''}
+                        
+                        <!-- Main scan button -->
+                        <button onclick="app.startScanning()" 
+                            class="w-16 h-16 ${isRM ? 'bg-gradient-to-br from-teal-500 to-teal-600 shadow-teal-200/50 border-teal-400' : 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-200/50 border-blue-400'} active:scale-95 text-white rounded-full shadow-xl flex items-center justify-center transition-all border-2"
+                            title="Scan barcode">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                            </svg>
+                        </button>
+                    </div>
                 `;
-
-                container.innerHTML = buttonsHtml;
             }
 
             // Manual 5-digit batch number entry for FP sessions
@@ -6980,16 +6982,21 @@
                         // Look up product info
                         const productInfo = productDatabase[batchNumber];
 
+                        // Create a synthetic 13-digit raw_code for manual entries
+                        // Format: 00000 (prefix) + batchNumber (5 digits) + 000 (suffix) = 13 digits
+                        const syntheticRawCode = '00000' + batchNumber + '000';
+
                         // Create parsed data similar to parseQRCode
                         const parsed = {
                             valid: true,
-                            raw: batchNumber,
+                            raw: syntheticRawCode, // Use 13-digit synthetic code for database
                             batchNumber: batchNumber,
                             palletNumber: null, // No pallet for manual entry
                             casesOnPallet: 0,
                             stockCode: productInfo?.stockCode || 'UNKNOWN',
                             description: productInfo?.description || 'Unknown Product',
-                            isUnknownProduct: !productInfo
+                            isUnknownProduct: !productInfo,
+                            isManualEntry: true // Flag for manual entry
                         };
 
                         // Handle unknown product - show search to select product
