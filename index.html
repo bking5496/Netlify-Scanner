@@ -7502,6 +7502,24 @@
                 this._executeRender();
             }
 
+            // Returns a unique key representing the current view/screen
+            // Used to detect actual view changes vs. data refreshes within same view
+            _getViewKey() {
+                if (this.isScanning) return 'scanning';
+                if (this.showingCaseEntry) return 'case-entry';
+                if (this.showingExpirySelection) return 'expiry-selection';
+                if (this.showingStartStockTake) return 'start-stocktake';
+                if (this.showingSettings) return 'settings';
+                if (this.showingWarehouseSetup) return 'warehouse-setup';
+                if (this.showingLocationPicker) return 'location-picker';
+                if (this.showingProductDB) return 'product-db';
+                if (this.showingRMProductDB) return 'rm-product-db';
+                if (this.showingSessionHistory) return 'session-history';
+                if (this.showingQRGenerator) return 'qr-generator';
+                if (this.showingSessionDashboard) return 'session-dashboard';
+                if (this.activeStockTake) return 'active-session';
+                return 'home';
+            }
             _executeRender() {
                 this._lastRenderTime = performance.now();
                 this.renderModal();
@@ -7510,10 +7528,18 @@
                 const app = document.getElementById('app');
 
                 const updateView = (html) => {
+                    // Detect if this is a significant view change vs. data refresh
+                    const currentViewKey = this._getViewKey();
+                    const isViewChange = this._lastViewKey !== currentViewKey;
+                    this._lastViewKey = currentViewKey;
+
                     app.innerHTML = html;
-                    // Add fade-in animation class to the app container
-                    app.classList.add('animate-fade-in');
-                    setTimeout(() => app.classList.remove('animate-fade-in'), 200);
+
+                    // Only animate on actual view changes, not data refreshes
+                    if (isViewChange) {
+                        app.classList.add('animate-fade-in');
+                        setTimeout(() => app.classList.remove('animate-fade-in'), 200);
+                    }
 
                     // Initialize swipe-to-delete on scan list items
                     requestAnimationFrame(() => this.initSwipeToDelete());
@@ -9339,7 +9365,7 @@
                         const borderColor = isExpired ? 'bg-red-500' : (scan.actualCases !== scan.casesOnPallet ? 'bg-yellow-500' : 'bg-emerald-500');
                         const escapedId = scan.id.toString().replace(/'/g, "\\'");
                         return `
-                                <div class="swipe-container list-item-enter" data-scan-id="${escapedId}" style="animation-delay: ${Math.min(this.scans.indexOf(scan) * 0.03, 0.3)}s">
+                                <div class="swipe-container" data-scan-id="${escapedId}">
                                     <div class="swipe-delete-action">
                                         <div class="flex flex-col items-center gap-1">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
