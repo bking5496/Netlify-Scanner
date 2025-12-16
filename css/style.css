@@ -1,0 +1,404 @@
+/* Critical CSS - inline for faster first paint */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+/* iOS camera fixes */
+#scanner video {
+    object-fit: cover !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#scanner {
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+/* Responsive adjustments */
+@media (min-width: 768px) {
+
+    /* Tablet and desktop: better spacing */
+    .scan-list-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+}
+
+@media (min-width: 1024px) {
+
+    /* Desktop: 3 column grid for scan items */
+    .scan-list-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Better touch targets on mobile */
+@media (max-width: 640px) {
+
+    button,
+    input,
+    select {
+        min-height: 44px;
+    }
+}
+
+/* Desktop hover effects */
+@media (hover: hover) {
+    .hover-lift:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.1);
+    }
+}
+
+/* Larger screens: increase max width of app container */
+@media (min-width: 1280px) {
+    #app {
+        max-width: 72rem;
+        /* xl:max-w-6xl equivalent */
+    }
+}
+
+@media (min-width: 1024px) {
+    #app {
+        max-width: 64rem;
+        /* lg:max-w-5xl equivalent */
+    }
+}
+
+/* Performance: GPU acceleration for animated elements */
+.animate-pulse,
+.animate-spin,
+.hover-lift,
+#scanner video,
+.view-transition,
+.swipe-item {
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+/* Reduce paint on scroll */
+#app {
+    contain: layout style;
+}
+
+/* ========================================
+   SMOOTH VIEW TRANSITIONS
+   ======================================== */
+
+/* Fade in animation for views */
+.animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Slide up animation for modals and cards */
+.animate-slide-up {
+    animation: slideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scale in animation for buttons and actions */
+.animate-scale-in {
+    animation: scaleIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Smooth page transitions */
+.view-transition {
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+/* ========================================
+   SWIPE TO DELETE
+   ======================================== */
+
+/* Swipe container */
+.swipe-container {
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+/* Swipe item (the content that slides) */
+.swipe-item {
+    position: relative;
+    background: white;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    touch-action: pan-y;
+    user-select: none;
+}
+
+.swipe-item.swiping {
+    transition: none;
+}
+
+.swipe-item.swiped-left {
+    transform: translateX(-80px);
+}
+
+/* Delete action revealed behind swipe */
+.swipe-delete-action {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 80px;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.swipe-container:has(.swipe-item.swiped-left) .swipe-delete-action,
+.swipe-container:has(.swipe-item.swiping) .swipe-delete-action {
+    opacity: 1;
+}
+
+/* Swipe hint animation */
+@keyframes swipeHint {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    50% {
+        transform: translateX(-10px);
+    }
+}
+
+.swipe-hint {
+    animation: swipeHint 1.5s ease-in-out infinite;
+}
+
+/* ========================================
+   CONSISTENT ICON STYLING
+   ======================================== */
+
+/* Action icon base styles */
+.action-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
+    transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.action-icon-lg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.action-icon-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Icon button hover effects */
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+}
+
+.icon-btn:hover .action-icon {
+    transform: scale(1.1);
+}
+
+.icon-btn:active .action-icon {
+    transform: scale(0.95);
+}
+
+/* Icon colors by semantic meaning */
+.icon-primary {
+    color: #3b82f6;
+}
+
+/* blue-500 */
+.icon-success {
+    color: #22c55e;
+}
+
+/* green-500 */
+.icon-warning {
+    color: #f59e0b;
+}
+
+/* amber-500 */
+.icon-danger {
+    color: #ef4444;
+}
+
+/* red-500 */
+.icon-muted {
+    color: #94a3b8;
+}
+
+/* slate-400 */
+
+/* ========================================
+   ENHANCED BUTTON ANIMATIONS
+   ======================================== */
+
+/* Button press effect */
+.btn-press {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-press:active {
+    transform: scale(0.97);
+}
+
+/* Floating action button animations */
+.fab {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 0.2s ease,
+        background-color 0.15s ease;
+}
+
+.fab:hover {
+    transform: scale(1.05);
+}
+
+.fab:active {
+    transform: scale(0.95);
+}
+
+/* ========================================
+   LIST ITEM ANIMATIONS
+   ======================================== */
+
+/* Staggered list entry */
+.list-item-enter {
+    animation: listItemEnter 0.3s ease-out backwards;
+}
+
+@keyframes listItemEnter {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Delete animation */
+.list-item-exit {
+    animation: listItemExit 0.25s ease-out forwards;
+}
+
+@keyframes listItemExit {
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+        height: 0;
+        padding: 0;
+        margin: 0;
+    }
+}
+
+/* ========================================
+   LOADING STATES
+   ======================================== */
+
+/* Skeleton loading */
+.skeleton {
+    background: linear-gradient(90deg,
+            #f1f5f9 25%,
+            #e2e8f0 50%,
+            #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: skeleton 1.5s infinite;
+    border-radius: 0.5rem;
+}
+
+@keyframes skeleton {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* ========================================
+   TOUCH FEEDBACK
+   ======================================== */
+
+/* Ripple effect container */
+.ripple-container {
+    position: relative;
+    overflow: hidden;
+}
+
+/* Haptic visual feedback */
+.haptic-flash {
+    animation: hapticFlash 0.1s ease-out;
+}
+
+@keyframes hapticFlash {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
