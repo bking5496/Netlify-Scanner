@@ -149,6 +149,57 @@ class ScannerApp {
         }
     }
 
+    editRack(rackId) {
+        const rack = this.sessionSettings.warehouseConfig?.racks?.find(r => r.id === rackId);
+        if (!rack) return;
+
+        this.showModal({
+            title: 'Edit Rack',
+            content: `
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Rack Name</label>
+                        <input type="text" id="edit-rack-name" value="${rack.name}" required maxlength="5" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-bold text-slate-900 placeholder:font-normal uppercase">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Levels (Up)</label>
+                            <input type="number" id="edit-rack-levels" value="${rack.levels}" min="1" max="10" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-bold text-slate-900">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Positions (Across)</label>
+                            <input type="number" id="edit-rack-columns" value="${rack.columns}" min="1" max="20" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-bold text-slate-900">
+                        </div>
+                    </div>
+                </div>
+            `,
+            confirmText: 'Save Changes',
+            onConfirm: () => {
+                const nameInput = document.getElementById('edit-rack-name');
+                const levelsInput = document.getElementById('edit-rack-levels');
+                const columnsInput = document.getElementById('edit-rack-columns');
+
+                if (!nameInput || !levelsInput || !columnsInput) return;
+
+                const name = nameInput.value.trim().toUpperCase();
+                const levels = parseInt(levelsInput.value);
+                const columns = parseInt(columnsInput.value);
+
+                if (name && levels > 0 && columns > 0) {
+                    rack.name = name;
+                    rack.levels = levels;
+                    rack.columns = columns;
+
+                    saveSessionSettings(this.sessionSettings);
+                    this.render();
+                } else {
+                    alert('Please fill in all fields correctly.');
+                    return false; // Prevent modal closing
+                }
+            }
+        });
+    }
+
     addFloorLocation() {
         this.showModal({
             title: '➕ Add Floor Location',
@@ -200,6 +251,16 @@ class ScannerApp {
     hideLocationPicker() {
         this.showingLocationPicker = false;
         this.selectedRackForPicker = null;
+        this.render();
+    }
+
+    showSettings() {
+        this.showingSettings = true;
+        this.render();
+    }
+
+    hideSettings() {
+        this.showingSettings = false;
         this.render();
     }
 
@@ -279,6 +340,66 @@ class ScannerApp {
         this.showingSessionDashboard = false;
         this.dashboardSessions = [];
         this.render();
+    }
+
+    async loadSessionHistory(sessionId) {
+        this.showingSessionHistory = true;
+        this.historyLoading = true;
+
+        // Find session in local lists or create a placeholder
+        const allSessions = [...(this.liveSessions || []), ...(this.historicalSessions || [])];
+        this.selectedHistorySession = allSessions.find(s => s.id === sessionId) || { id: sessionId, warehouse: 'Unknown', sessionType: 'Unknown', date: 'Unknown' };
+
+        this.render();
+
+        try {
+            this.historyScans = await this.getScansForSession(sessionId);
+        } catch (e) {
+            console.error(e);
+            this.historyScans = [];
+        } finally {
+            this.historyLoading = false;
+            this.render();
+        }
+    }
+
+    hideSessionHistory() {
+        this.showingSessionHistory = false;
+        this.selectedHistorySession = null;
+        this.render();
+    }
+
+    exportHistorySession() {
+        if (!this.selectedHistorySession || !this.historyScans) return;
+        this.exportToCSV(this.historyScans, `session_${this.selectedHistorySession.id}_${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    async getScansForSession(sessionId) {
+        if (!supabase) return [];
+        const { data, error } = await supabase
+            .from('scans')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.warn('Error fetching scans:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    exportToCSV(data, filename) {
+        if (!data || !data.length) return;
+        const headers = Object.keys(data[0]).join(',');
+        const rows = data.map(row => Object.values(row).map(v => `"${v}"`).join(',')).join('\n');
+        const csv = headers + '\n' + rows;
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
     }
 
     async refreshDashboard() {
@@ -4962,7 +5083,7 @@ class ScannerApp {
             return;
         }
 
-        const { title, message, type, fields, confirmText, cancelText } = this.modalState;
+        const { title, message, type, fields, confirmText, cancelText, content: customContent } = this.modalState;
 
         let content = '';
 
@@ -4970,6 +5091,8 @@ class ScannerApp {
             content = `
                         <input type="text" id="modal-input" class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-50/50 outline-none transition-all" placeholder="Enter value" autocomplete="off">
                     `;
+        } else if (customContent) {
+            content = customContent;
         } else if (type === 'form') {
             content = fields.map(field => `
                         <div class="mb-4">
