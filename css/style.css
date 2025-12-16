@@ -1,404 +1,267 @@
-/* Critical CSS - inline for faster first paint */
+/* ===========================================
+   PUDGY/IGLOO PREMIUM DESIGN SYSTEM
+   =========================================== */
+
+:root {
+    /* Brand Palette - Inspired by Igloo.inc */
+    --color-bg: #F8FAFC;
+    /* Clean light background */
+    --color-primary: #383E4E;
+    /* Deep Blue Grey (Igloo) */
+    --color-accent: #3B82F6;
+    /* Vibrant Tech Blue */
+    --color-accent-hover: #2563EB;
+    --color-success: #10B981;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+
+    /* Surface Colors - Glassmorphism */
+    --glass-surface: rgba(255, 255, 255, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    --blur-strength: 16px;
+
+    /* Typography */
+    --font-heading: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+    /* Geometry */
+    --radius-sm: 0.5rem;
+    /* 8px */
+    --radius-md: 0.75rem;
+    /* 12px */
+    --radius-lg: 1rem;
+    /* 16px */
+    --radius-xl: 1.5rem;
+    /* 24px - for cards */
+    --radius-pill: 9999px;
+    /* for buttons */
+}
+
+/* ===========================================
+   CORE RESET & TYPOGRAPHY
+   =========================================== */
+
 * {
     box-sizing: border-box;
 }
 
 body {
     margin: 0;
+    font-family: var(--font-body);
+    background-color: var(--color-bg);
+    color: var(--color-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
-/* iOS camera fixes */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.025em;
+    /* Tight tracking for modern feel */
+    font-weight: 700;
+}
+
+/* ===========================================
+   UTILITY CLASSES (GLASSMORPHISM)
+   =========================================== */
+
+.glass-panel {
+    background: var(--glass-surface);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    border-radius: var(--radius-xl);
+}
+
+.glass-header {
+    background: rgba(255, 255, 255, 0.85);
+    /* Slightly more opaque */
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* ===========================================
+   COMPONENTS
+   =========================================== */
+
+/* Premium Buttons */
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-pill);
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    border: none;
+    box-shadow: 0 4px 14px 0 rgba(56, 62, 78, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px 0 rgba(56, 62, 78, 0.4);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-accent {
+    background: var(--color-accent);
+    color: white;
+    border-radius: var(--radius-pill);
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.3);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-accent:hover {
+    background-color: var(--color-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.4);
+}
+
+/* Rounded Cards */
+.card-premium {
+    background: white;
+    border-radius: var(--radius-xl);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+.card-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* Inputs */
+input,
+select {
+    border-radius: var(--radius-md) !important;
+    border: 1px solid #E2E8F0 !important;
+    background: #F8FAFC !important;
+    transition: all 0.2s ease;
+}
+
+input:focus,
+select:focus {
+    background: white !important;
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+    outline: none;
+}
+
+/* ===========================================
+   SCANNER SPECIFIC
+   =========================================== */
+
 #scanner video {
     object-fit: cover !important;
     width: 100% !important;
     height: 100% !important;
+    border-radius: var(--radius-xl);
 }
 
-#scanner {
+#scanner-overlay {
+    border-radius: var(--radius-xl);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     overflow: hidden;
-    border-radius: 12px;
 }
 
-/* Responsive adjustments */
-@media (min-width: 768px) {
+/* ===========================================
+   ANIMATIONS
+   =========================================== */
 
-    /* Tablet and desktop: better spacing */
+/* Fade Up Entry (Classic modern reveal) */
+.animate-fade-up {
+    animation: fadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+@keyframes fadeUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Stagger delays */
+.delay-100 {
+    animation-delay: 100ms;
+}
+
+.delay-200 {
+    animation-delay: 200ms;
+}
+
+.delay-300 {
+    animation-delay: 300ms;
+}
+
+/* Pulse Glow (for active states) */
+@keyframes pulse-soft {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    }
+}
+
+.animate-pulse-soft {
+    animation: pulse-soft 2s infinite;
+}
+
+/* Swipe Actions */
+.swipe-item {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: white;
+    border-radius: var(--radius-lg);
+}
+
+/* ========================================
+   RESPONSIVE LAYOUT
+   ======================================== */
+@media (min-width: 768px) {
     .scan-list-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
-    }
-}
-
-@media (min-width: 1024px) {
-
-    /* Desktop: 3 column grid for scan items */
-    .scan-list-grid {
-        grid-template-columns: repeat(3, 1fr);
-    }
-}
-
-/* Better touch targets on mobile */
-@media (max-width: 640px) {
-
-    button,
-    input,
-    select {
-        min-height: 44px;
-    }
-}
-
-/* Desktop hover effects */
-@media (hover: hover) {
-    .hover-lift:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.1);
-    }
-}
-
-/* Larger screens: increase max width of app container */
-@media (min-width: 1280px) {
-    #app {
-        max-width: 72rem;
-        /* xl:max-w-6xl equivalent */
+        gap: 1.5rem;
     }
 }
 
 @media (min-width: 1024px) {
     #app {
         max-width: 64rem;
-        /* lg:max-w-5xl equivalent */
+        /* Standard max-w-5xl */
+    }
+
+    .scan-list-grid {
+        grid-template-columns: repeat(3, 1fr);
     }
 }
 
-/* Performance: GPU acceleration for animated elements */
-.animate-pulse,
-.animate-spin,
-.hover-lift,
-#scanner video,
-.view-transition,
-.swipe-item {
-    will-change: transform;
-    transform: translateZ(0);
-}
-
-/* Reduce paint on scroll */
-#app {
-    contain: layout style;
-}
-
-/* ========================================
-   SMOOTH VIEW TRANSITIONS
-   ======================================== */
-
-/* Fade in animation for views */
-.animate-fade-in {
-    animation: fadeIn 0.2s ease-out;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(8px);
+/* Mobile optimizations */
+@media (max-width: 640px) {
+    h1 {
+        font-size: 1.75rem !important;
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Slide up animation for modals and cards */
-.animate-slide-up {
-    animation: slideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Scale in animation for buttons and actions */
-.animate-scale-in {
-    animation: scaleIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes scaleIn {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-/* Smooth page transitions */
-.view-transition {
-    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
-}
-
-/* ========================================
-   SWIPE TO DELETE
-   ======================================== */
-
-/* Swipe container */
-.swipe-container {
-    position: relative;
-    overflow: hidden;
-    border-radius: 12px;
-}
-
-/* Swipe item (the content that slides) */
-.swipe-item {
-    position: relative;
-    background: white;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: pan-y;
-    user-select: none;
-}
-
-.swipe-item.swiping {
-    transition: none;
-}
-
-.swipe-item.swiped-left {
-    transform: translateX(-80px);
-}
-
-/* Delete action revealed behind swipe */
-.swipe-delete-action {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 80px;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-size: 0.75rem;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.swipe-container:has(.swipe-item.swiped-left) .swipe-delete-action,
-.swipe-container:has(.swipe-item.swiping) .swipe-delete-action {
-    opacity: 1;
-}
-
-/* Swipe hint animation */
-@keyframes swipeHint {
-
-    0%,
-    100% {
-        transform: translateX(0);
-    }
-
-    50% {
-        transform: translateX(-10px);
-    }
-}
-
-.swipe-hint {
-    animation: swipeHint 1.5s ease-in-out infinite;
-}
-
-/* ========================================
-   CONSISTENT ICON STYLING
-   ======================================== */
-
-/* Action icon base styles */
-.action-icon {
-    width: 1.25rem;
-    height: 1.25rem;
-    flex-shrink: 0;
-    transition: transform 0.15s ease, color 0.15s ease;
-}
-
-.action-icon-lg {
-    width: 1.5rem;
-    height: 1.5rem;
-}
-
-.action-icon-sm {
-    width: 1rem;
-    height: 1rem;
-}
-
-/* Icon button hover effects */
-.icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    transition: all 0.15s ease;
-    cursor: pointer;
-    background: transparent;
-    border: none;
-}
-
-.icon-btn:hover .action-icon {
-    transform: scale(1.1);
-}
-
-.icon-btn:active .action-icon {
-    transform: scale(0.95);
-}
-
-/* Icon colors by semantic meaning */
-.icon-primary {
-    color: #3b82f6;
-}
-
-/* blue-500 */
-.icon-success {
-    color: #22c55e;
-}
-
-/* green-500 */
-.icon-warning {
-    color: #f59e0b;
-}
-
-/* amber-500 */
-.icon-danger {
-    color: #ef4444;
-}
-
-/* red-500 */
-.icon-muted {
-    color: #94a3b8;
-}
-
-/* slate-400 */
-
-/* ========================================
-   ENHANCED BUTTON ANIMATIONS
-   ======================================== */
-
-/* Button press effect */
-.btn-press {
-    transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-
-.btn-press:active {
-    transform: scale(0.97);
-}
-
-/* Floating action button animations */
-.fab {
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-        box-shadow 0.2s ease,
-        background-color 0.15s ease;
-}
-
-.fab:hover {
-    transform: scale(1.05);
-}
-
-.fab:active {
-    transform: scale(0.95);
-}
-
-/* ========================================
-   LIST ITEM ANIMATIONS
-   ======================================== */
-
-/* Staggered list entry */
-.list-item-enter {
-    animation: listItemEnter 0.3s ease-out backwards;
-}
-
-@keyframes listItemEnter {
-    from {
-        opacity: 0;
-        transform: translateX(-10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-/* Delete animation */
-.list-item-exit {
-    animation: listItemExit 0.25s ease-out forwards;
-}
-
-@keyframes listItemExit {
-    to {
-        opacity: 0;
-        transform: translateX(100%);
-        height: 0;
-        padding: 0;
-        margin: 0;
-    }
-}
-
-/* ========================================
-   LOADING STATES
-   ======================================== */
-
-/* Skeleton loading */
-.skeleton {
-    background: linear-gradient(90deg,
-            #f1f5f9 25%,
-            #e2e8f0 50%,
-            #f1f5f9 75%);
-    background-size: 200% 100%;
-    animation: skeleton 1.5s infinite;
-    border-radius: 0.5rem;
-}
-
-@keyframes skeleton {
-    0% {
-        background-position: 200% 0;
-    }
-
-    100% {
-        background-position: -200% 0;
-    }
-}
-
-/* ========================================
-   TOUCH FEEDBACK
-   ======================================== */
-
-/* Ripple effect container */
-.ripple-container {
-    position: relative;
-    overflow: hidden;
-}
-
-/* Haptic visual feedback */
-.haptic-flash {
-    animation: hapticFlash 0.1s ease-out;
-}
-
-@keyframes hapticFlash {
-    0% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.7;
-    }
-
-    100% {
-        opacity: 1;
+    .btn-primary {
+        padding: 0.875rem 1.5rem;
+        width: 100%;
+        justify-content: center;
+        display: flex;
     }
 }
