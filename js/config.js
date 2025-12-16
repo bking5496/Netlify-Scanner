@@ -21,7 +21,23 @@ const supabaseCredentialsConfigured = Boolean(window.supabase?.createClient)
 // Initialize Supabase client whenever credentials exist
 let supabase = null;
 if (supabaseCredentialsConfigured) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Initialize Supabase Client
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true
+            },
+            db: {
+                schema: 'public'
+            }
+        });
+        // Expose the Supabase client instance globally
+        window.supabaseClient = supabase;
+    } else {
+        console.error('Supabase JS library not loaded or createClient is not a function!');
+    }
+
     try {
         const cachedSession = JSON.parse(localStorage.getItem('supabaseSessionCache') || 'null');
         if (cachedSession?.access_token && cachedSession?.refresh_token) {

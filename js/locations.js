@@ -3,8 +3,8 @@
 // ===========================================
 
 // Cache for warehouse locations
-let warehouseLocationsCache = JSON.parse(localStorage.getItem('warehouseLocationsCache') || '[]');
-let locationsLoadedFromDB = false;
+window.warehouseLocationsCache = JSON.parse(localStorage.getItem('warehouseLocationsCache') || '[]');
+window.locationsLoadedFromDB = false;
 
 // Load warehouse locations from Supabase
 let _locationsLoadPromise = null;

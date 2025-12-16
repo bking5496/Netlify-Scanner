@@ -28,8 +28,8 @@ async function logClientEvent(eventType, severity = 'info', sessionId = null, pa
 // ===========================================
 
 // Cache for user data from Supabase
-let cachedUserData = null;
-let userDataLastFetched = null;
+window.cachedUserData = null;
+window.userDataLastFetched = null;
 const USER_CACHE_TTL_MS = 60000; // 1 minute cache
 
 // Sync current user to Supabase
@@ -194,12 +194,12 @@ const listDevicesFromSupabase = async (activeOnly = true) => {
 // ===========================================
 
 // Local Caches (globals)
-let productDatabase = JSON.parse(localStorage.getItem('productDatabase') || '{}');
-let productsLoadedFromDB = false;
-let rawMaterialsDatabase = JSON.parse(localStorage.getItem('rawMaterialsDatabase') || '{}');
-let rmProductsLoadedFromDB = false;
-let productTypeDatabase = JSON.parse(localStorage.getItem('productTypeDatabase') || '{}');
-let productTypesLoadedFromDB = false;
+window.productDatabase = JSON.parse(localStorage.getItem('productDatabase') || '{}');
+window.productsLoadedFromDB = false;
+window.rawMaterialsDatabase = JSON.parse(localStorage.getItem('rawMaterialsDatabase') || '{}');
+window.rmProductsLoadedFromDB = false;
+window.productTypeDatabase = JSON.parse(localStorage.getItem('productTypeDatabase') || '{}');
+window.productTypesLoadedFromDB = false;
 
 // Load FP products from Supabase
 let _productsLoadPromise = null;
