@@ -2352,7 +2352,35 @@ class ScannerApp {
         // Clear pending render flag since we're rendering now
         this._pendingRender = false;
         this.triggerHaptic('success');
+
+        // Show visual success feedback
+        this.showScanSuccessAnimation();
+
         this.render();
+    }
+
+    showScanSuccessAnimation() {
+        // Create success overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'scan-success-overlay';
+        overlay.innerHTML = `
+            <div class="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
+                <div class="animate-bounce-in flex flex-col items-center">
+                    <div class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center shadow-2xl shadow-emerald-500/50 animate-success-flash">
+                        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <div class="mt-4 text-emerald-600 font-bold text-lg animate-fade-in-up">Saved!</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // Remove after animation
+        setTimeout(() => {
+            overlay.remove();
+        }, 1000);
     }
 
     editScan(id) {
