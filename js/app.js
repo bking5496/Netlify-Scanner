@@ -6831,82 +6831,113 @@ class ScannerApp {
             const floors = this.sessionSettings.warehouseConfig?.floorLocations || [];
 
             updateView(`
-                < div class= "min-h-screen bg-slate-50 flex items-center justify-center p-4" >
-                <div class="w-full max-w-lg bg-white rounded-[2rem] shadow-2xl shadow-slate-200 overflow-hidden animate-fade-up">
-                    <!-- Header -->
-                    <div class="p-6 bg-gradient-to-br from-blue-600 to-blue-800 text-white relative overflow-hidden">
-                        <div class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgb3BhY2l0eT0iMC4xIiBmaWxsPSIjZmZmIj48Y2lyY2xlIGN4PSIxIiBjeT0iMSIgcj0iMSIvPjwvZz48L3N2Zz4=')] opacity-20"></div>
-
-                        <div class="relative flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30">
-                                    <span class="text-2xl">🏭</span>
-                                </div>
-                                <div>
-                                    <h2 class="text-xl font-bold">Warehouse Setup</h2>
-                                    <p class="text-blue-100 text-sm font-medium">Configure racks & floor areas</p>
-                                </div>
-                            </div>
-                            <button onclick="app.hideWarehouseSetup()" class="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl transition-all border border-white/10">
-                                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="p-6 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                        <!-- Racks Section -->
-                        <div class="space-y-4">
+                <div class="min-h-screen bg-slate-50 p-4">
+                    <div class="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <!-- Header -->
+                        <div class="p-6 bg-gradient-to-br from-blue-600 to-blue-800 text-white">
                             <div class="flex items-center justify-between">
-                                <h3 class="font-bold text-slate-800 flex items-center gap-2">
-                                    <span class="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-lg">📦</span>
-                                    Racks
-                                </h3>
-                                <button onclick="app.addRack()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-blue-200 transform active:scale-95 flex items-center gap-2">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                                    Add Rack
+                                <div>
+                                    <h2 class="text-2xl font-bold">Warehouse Setup</h2>
+                                    <p class="text-blue-100 text-sm mt-1">Configure racks and floor areas</p>
+                                </div>
+                                <button onclick="app.hideWarehouseSetup()" class="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-all">
+                                    <span class="text-white font-bold">Close</span>
                                 </button>
                             </div>
+                        </div>
 
-                            ${racks.length === 0 ? `
-                                    <div class="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center flex flex-col items-center">
-                                        <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mb-3">
-                                            <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/>
-                                            </svg>
-                                        </div>
+                        <div class="p-6 space-y-8 max-h-[70vh] overflow-y-auto">
+                            <!-- Racks Section -->
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-slate-800">Racks</h3>
+                                    <button onclick="app.addRack()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl transition-all">
+                                        + Add Rack
+                                    </button>
+                                </div>
+
+                                ${racks.length === 0 ? `
+                                    <div class="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center">
                                         <p class="font-bold text-slate-700">No racks configured</p>
                                         <p class="text-sm text-slate-500 mt-1">Add racks to define storage structure</p>
                                     </div>
                                 ` : `
-                                    <div class="grid gap-3">
+                                    <div class="space-y-3">
                                         ${racks.map(rack => `
-                                            <div class="group p-4 border border-slate-200 hover:border-blue-200 rounded-2xl bg-slate-50 hover:bg-white transition-all shadow-sm hover:shadow-md">
-                                                <div class="flex items-center justify-between mb-3">
-                                                    <div class="flex items-center gap-3">
-                                                        <div class="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-black text-slate-700 shadow-sm">
-                                                            ${rack.name}
+                                            <div class="p-4 border border-slate-200 rounded-xl bg-white hover:border-blue-300 transition-all">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex items-center gap-4">
+                                                        <div class="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
+                                                            <span class="font-black text-blue-700 text-lg">${rack.name}</span>
                                                         </div>
                                                         <div>
-                            <div class="mt-3 text-xs text-blue-600">
-                                Levels go A→Z from bottom to top. Positions go 1→N from left to right.
+                                                            <div class="font-bold text-slate-900">${rack.name}</div>
+                                                            <div class="text-sm text-slate-500">
+                                                                ${rack.levels} levels × ${rack.columns} positions
+                                                            </div>
+                                                            <div class="text-xs text-slate-400 mt-1">
+                                                                Total slots: ${rack.levels * rack.columns}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex gap-2">
+                                                        <button onclick="app.editRack('${rack.id}')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-lg transition-colors">
+                                                            Edit
+                                                        </button>
+                                                        <button onclick="app.deleteRack('${rack.id}')" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-lg transition-colors">
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `}
+                                
+                                <div class="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                                    Levels go A to Z from bottom to top. Positions go 1 to N from left to right.
+                                </div>
+                            </div>
+
+                            <!-- Floor Locations Section -->
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-slate-800">Floor Locations</h3>
+                                    <button onclick="app.addFloorLocation()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold rounded-xl transition-all">
+                                        + Add Floor Area
+                                    </button>
+                                </div>
+
+                                ${floors.length === 0 ? `
+                                    <div class="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center">
+                                        <p class="font-bold text-slate-700">No floor locations configured</p>
+                                        <p class="text-sm text-slate-500 mt-1">Add floor areas for staging or overflow</p>
+                                    </div>
+                                ` : `
+                                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                        ${floors.map(floor => `
+                                            <div class="p-4 border border-slate-200 rounded-xl bg-white hover:border-teal-300 transition-all group">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="font-bold text-slate-800">${floor}</span>
+                                                    <button onclick="app.deleteFloorLocation('${floor}')" class="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs text-red-500 hover:text-red-700 font-bold transition-all">
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `}
                             </div>
                         </div>
-                    </div>
-                `).join('')}
-            </div>
-        `}
-    </div>
 
-    <div class="p-4 border-t border-slate-100">
-        <button onclick="app.hideWarehouseSetup()" class="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
-            Done
-        </button>
-    </div>
-</div>
-</div>
-`);
+                        <div class="p-4 border-t border-slate-100">
+                            <button onclick="app.hideWarehouseSetup()" class="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `);
             return;
         }
 
