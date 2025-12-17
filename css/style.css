@@ -265,3 +265,344 @@ select:focus {
         display: flex;
     }
 }
+
+/* ===========================================
+   PHASE 3: MICRO-ANIMATIONS & POLISH
+   =========================================== */
+
+/* Fade In (generic) */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Fade In Right (for side panels) */
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.animate-fade-in-right {
+    animation: fadeInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Fade In Up (for list items) */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in-up {
+    animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Scale Up (for modals) */
+@keyframes scaleUp {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-scale-up {
+    animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Shimmer Effect (for loading skeletons) */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-md);
+}
+
+.skeleton-text {
+    height: 1rem;
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.skeleton-text-sm {
+    height: 0.75rem;
+    width: 60%;
+}
+
+.skeleton-circle {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+}
+
+.skeleton-card {
+    height: 6rem;
+    border-radius: var(--radius-xl);
+}
+
+/* Button Ripple Effect */
+.btn-ripple {
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-ripple::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease, height 0.4s ease, opacity 0.4s ease;
+    opacity: 0;
+}
+
+.btn-ripple:active::after {
+    width: 300px;
+    height: 300px;
+    opacity: 1;
+    transition: width 0s, height 0s, opacity 0s;
+}
+
+/* Success Flash Animation */
+@keyframes successFlash {
+    0% {
+        background-color: #10B981;
+        transform: scale(1);
+    }
+
+    50% {
+        background-color: #34D399;
+        transform: scale(1.05);
+    }
+
+    100% {
+        background-color: #10B981;
+        transform: scale(1);
+    }
+}
+
+.animate-success-flash {
+    animation: successFlash 0.5s ease-out;
+}
+
+/* Error Shake Animation */
+@keyframes errorShake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    20%,
+    60% {
+        transform: translateX(-5px);
+    }
+
+    40%,
+    80% {
+        transform: translateX(5px);
+    }
+}
+
+.animate-error-shake {
+    animation: errorShake 0.4s ease-out;
+}
+
+/* Pulse Ring (for active indicators) */
+@keyframes pulseRing {
+    0% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6);
+    }
+
+    70% {
+        box-shadow: 0 0 0 8px rgba(59, 130, 246, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+.animate-pulse-ring {
+    animation: pulseRing 1.5s infinite;
+}
+
+/* Bounce In (for success checkmarks) */
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+
+    70% {
+        transform: scale(0.9);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.animate-bounce-in {
+    animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+}
+
+/* Slide Out Left (for swipe delete) */
+@keyframes slideOutLeft {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(-100%);
+    }
+}
+
+.animate-slide-out-left {
+    animation: slideOutLeft 0.3s ease-out forwards;
+}
+
+/* Stagger Animation Delays */
+.stagger-1 {
+    animation-delay: 50ms;
+}
+
+.stagger-2 {
+    animation-delay: 100ms;
+}
+
+.stagger-3 {
+    animation-delay: 150ms;
+}
+
+.stagger-4 {
+    animation-delay: 200ms;
+}
+
+.stagger-5 {
+    animation-delay: 250ms;
+}
+
+.stagger-6 {
+    animation-delay: 300ms;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+/* View Transition (for screen changes) */
+.view-transition-enter {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+.view-transition-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view-transition-exit {
+    opacity: 1;
+}
+
+.view-transition-exit-active {
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+/* Offline Indicator Pulse */
+@keyframes offlinePulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-offline-pulse {
+    animation: offlinePulse 2s infinite;
+}
+
+/* Spinner */
+.spinner {
+    border: 3px solid rgba(59, 130, 246, 0.2);
+    border-top-color: #3B82F6;
+    border-radius: 50%;
+    width: 2rem;
+    height: 2rem;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
