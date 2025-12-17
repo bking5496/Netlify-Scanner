@@ -2,11 +2,11 @@
 // API LOGIC (Logging, Users, Products, Sessions)
 // ===========================================
 
-// Log client event to Supabase
+// Log client event to supabaseClient
 async function logClientEvent(eventType, severity = 'info', sessionId = null, payload = {}) {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     try {
-        await supabase.rpc('log_event', {
+        await supabaseClient.rpc('log_event', {
             p_event_type: eventType,
             p_severity: severity,
             p_session_id: sessionId,
@@ -24,21 +24,21 @@ async function logClientEvent(eventType, severity = 'info', sessionId = null, pa
 }
 
 // ===========================================
-// SUPABASE USER & DEVICE SYNC
+// supabaseClient USER & DEVICE SYNC
 // ===========================================
 
-// Cache for user data from Supabase
+// Cache for user data from supabaseClient
 window.cachedUserData = null;
 window.userDataLastFetched = null;
 const USER_CACHE_TTL_MS = 60000; // 1 minute cache
 
-// Sync current user to Supabase
+// Sync current user to supabaseClient
 const syncUserToSupabase = async (name, role, warehouse) => {
-    if (!supabase || db.mode !== 'supabase') return null;
+    if (!supabaseClient || db.mode !== 'supabaseClient') return null;
 
     try {
         const displayName = name.replace(/\*+$/, '').trim();
-        const { data, error } = await supabase.rpc('upsert_app_user', {
+        const { data, error } = await supabaseClient.rpc('upsert_app_user', {
             p_name: name,
             p_display_name: displayName,
             p_role: role,
@@ -46,7 +46,7 @@ const syncUserToSupabase = async (name, role, warehouse) => {
         });
 
         if (error) {
-            console.warn('Failed to sync user to Supabase:', error);
+            console.warn('Failed to sync user to supabaseClient:', error);
             return null;
         }
 
@@ -61,16 +61,16 @@ const syncUserToSupabase = async (name, role, warehouse) => {
     }
 };
 
-// Sync current device to Supabase
+// Sync current device to supabaseClient
 const syncDeviceToSupabase = async () => {
-    if (!supabase || db.mode !== 'supabase') return null;
+    if (!supabaseClient || db.mode !== 'supabaseClient') return null;
 
     try {
         const userName = getUserName();
         const platform = detectPlatform();
         const userAgent = navigator.userAgent;
 
-        const { data, error } = await supabase.rpc('upsert_app_device', {
+        const { data, error } = await supabaseClient.rpc('upsert_app_device', {
             p_device_id: DEVICE_ID,
             p_user_name: userName || null,
             p_platform: platform,
@@ -79,7 +79,7 @@ const syncDeviceToSupabase = async () => {
         });
 
         if (error) {
-            console.warn('Failed to sync device to Supabase:', error);
+            console.warn('Failed to sync device to supabaseClient:', error);
             return null;
         }
 
@@ -101,9 +101,9 @@ const detectPlatform = () => {
     return 'Unknown';
 };
 
-// Get user data from Supabase (with caching)
+// Get user data from supabaseClient (with caching)
 const getUserFromSupabase = async (name) => {
-    if (!supabase || db.mode !== 'supabase') return null;
+    if (!supabaseClient || db.mode !== 'supabaseClient') return null;
 
     // Check cache
     if (cachedUserData && userDataLastFetched &&
@@ -113,10 +113,10 @@ const getUserFromSupabase = async (name) => {
     }
 
     try {
-        const { data, error } = await supabase.rpc('get_user_by_name', { p_name: name });
+        const { data, error } = await supabaseClient.rpc('get_user_by_name', { p_name: name });
 
         if (error) {
-            console.warn('Failed to get user from Supabase:', error);
+            console.warn('Failed to get user from supabaseClient:', error);
             return null;
         }
 
@@ -131,11 +131,11 @@ const getUserFromSupabase = async (name) => {
     }
 };
 
-// Get user role from Supabase (fallback to name suffix)
+// Get user role from supabaseClient (fallback to name suffix)
 const getUserRoleFromSupabase = async (name) => {
     if (!name) return 'operator';
 
-    // Try Supabase first
+    // Try supabaseClient first
     const userData = await getUserFromSupabase(name);
     if (userData?.role) {
         return userData.role;
@@ -147,17 +147,17 @@ const getUserRoleFromSupabase = async (name) => {
     return 'operator';
 };
 
-// List all users from Supabase (for admin)
+// List all users from supabaseClient (for admin)
 const listUsersFromSupabase = async (warehouse = null) => {
-    if (!supabase || db.mode !== 'supabase') return [];
+    if (!supabaseClient || db.mode !== 'supabaseClient') return [];
 
     try {
-        const { data, error } = await supabase.rpc('list_app_users', {
+        const { data, error } = await supabaseClient.rpc('list_app_users', {
             p_warehouse: warehouse
         });
 
         if (error) {
-            console.warn('Failed to list users from Supabase:', error);
+            console.warn('Failed to list users from supabaseClient:', error);
             return [];
         }
 
@@ -168,17 +168,17 @@ const listUsersFromSupabase = async (warehouse = null) => {
     }
 };
 
-// List all devices from Supabase (for admin)
+// List all devices from supabaseClient (for admin)
 const listDevicesFromSupabase = async (activeOnly = true) => {
-    if (!supabase || db.mode !== 'supabase') return [];
+    if (!supabaseClient || db.mode !== 'supabaseClient') return [];
 
     try {
-        const { data, error } = await supabase.rpc('list_app_devices', {
+        const { data, error } = await supabaseClient.rpc('list_app_devices', {
             p_active_only: activeOnly
         });
 
         if (error) {
-            console.warn('Failed to list devices from Supabase:', error);
+            console.warn('Failed to list devices from supabaseClient:', error);
             return [];
         }
 
@@ -201,20 +201,20 @@ window.rmProductsLoadedFromDB = false;
 window.productTypeDatabase = JSON.parse(localStorage.getItem('productTypeDatabase') || '{}');
 window.productTypesLoadedFromDB = false;
 
-// Load FP products from Supabase
+// Load FP products from supabaseClient
 let _productsLoadPromise = null;
 async function loadProductsFromSupabase(forceReload = false) {
     if (_productsLoadPromise && !forceReload) return _productsLoadPromise;
     if (productsLoadedFromDB && !forceReload) return true;
-    if (!supabase) {
-        console.log('Supabase not available, using cached products');
+    if (!supabaseClient) {
+        console.log('supabaseClient not available, using cached products');
         return false;
     }
 
     _productsLoadPromise = (async () => {
         try {
-            console.log('Loading FP products from Supabase...');
-            const { data, error } = await supabase
+            console.log('Loading FP products from supabaseClient...');
+            const { data, error } = await supabaseClient
                 .from('products')
                 .select('batch_number,stock_code,description');
 
@@ -238,32 +238,32 @@ async function loadProductsFromSupabase(forceReload = false) {
                 });
                 localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
                 productsLoadedFromDB = true;
-                console.log(`Loaded ${Object.keys(productDatabase).length} FP products from Supabase`);
+                console.log(`Loaded ${Object.keys(productDatabase).length} FP products from supabaseClient`);
                 return true;
             }
             return false;
         } catch (err) {
-            console.error('Failed to load products from Supabase:', err);
+            console.error('Failed to load products from supabaseClient:', err);
             return false;
         }
     })();
     return _productsLoadPromise;
 }
 
-// Load RM products from Supabase
+// Load RM products from supabaseClient
 let _rmProductsLoadPromise = null;
 async function loadRawMaterialsFromSupabase(forceReload = false) {
     if (_rmProductsLoadPromise && !forceReload) return _rmProductsLoadPromise;
     if (rmProductsLoadedFromDB && !forceReload) return true;
-    if (!supabase) {
-        console.log('Supabase not available, using cached raw materials');
+    if (!supabaseClient) {
+        console.log('supabaseClient not available, using cached raw materials');
         return false;
     }
 
     _rmProductsLoadPromise = (async () => {
         try {
-            console.log('Loading RM products from Supabase...');
-            const { data, error } = await supabase.from('raw_materials').select('*');
+            console.log('Loading RM products from supabaseClient...');
+            const { data, error } = await supabaseClient.from('raw_materials').select('*');
 
             if (error) {
                 console.error('Error loading raw materials:', error);
@@ -299,32 +299,32 @@ async function loadRawMaterialsFromSupabase(forceReload = false) {
                 });
                 localStorage.setItem('rawMaterialsDatabase', JSON.stringify(rawMaterialsDatabase));
                 rmProductsLoadedFromDB = true;
-                console.log(`Loaded ${Object.keys(rawMaterialsDatabase).length} RM products from Supabase`);
+                console.log(`Loaded ${Object.keys(rawMaterialsDatabase).length} RM products from supabaseClient`);
                 return true;
             }
             return false;
         } catch (err) {
-            console.error('Failed to load raw materials from Supabase:', err);
+            console.error('Failed to load raw materials from supabaseClient:', err);
             return false;
         }
     })();
     return _rmProductsLoadPromise;
 }
 
-// Load product types from Supabase
+// Load product types from supabaseClient
 let _productTypesLoadPromise = null;
 async function loadProductTypesFromSupabase(forceReload = false) {
     if (_productTypesLoadPromise && !forceReload) return _productTypesLoadPromise;
     if (productTypesLoadedFromDB && !forceReload) return true;
-    if (!supabase) {
-        console.log('Supabase not available, using cached product types');
+    if (!supabaseClient) {
+        console.log('supabaseClient not available, using cached product types');
         return false;
     }
 
     _productTypesLoadPromise = (async () => {
         try {
-            console.log('Loading product types from Supabase...');
-            const { data, error } = await supabase
+            console.log('Loading product types from supabaseClient...');
+            const { data, error } = await supabaseClient
                 .from('product_types')
                 .select('type,stock_code,description');
 
@@ -350,25 +350,25 @@ async function loadProductTypesFromSupabase(forceReload = false) {
                 });
                 localStorage.setItem('productTypeDatabase', JSON.stringify(productTypeDatabase));
                 productTypesLoadedFromDB = true;
-                console.log(`Loaded ${Object.keys(productTypeDatabase).length} product types from Supabase`);
+                console.log(`Loaded ${Object.keys(productTypeDatabase).length} product types from supabaseClient`);
                 return true;
             }
             return false;
         } catch (err) {
-            console.error('Failed to load product types from Supabase:', err);
+            console.error('Failed to load product types from supabaseClient:', err);
             return false;
         }
     })();
     return _productTypesLoadPromise;
 }
 
-// Live duplicate check against Supabase
+// Live duplicate check against supabaseClient
 async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, stockCode, expiryDate = null, palletNumber = null) {
-    if (!supabase || !sessionId) return null;
+    if (!supabaseClient || !sessionId) return null;
 
     try {
         const cleanBatch = String(batchNumber).trim();
-        let query = supabase
+        let query = supabaseClient
             .from('stock_scans')
             .select('id,scanned_at,scanned_by,device_id,actual_cases')
             .eq('session_id', sessionId)
@@ -402,16 +402,16 @@ async function checkDuplicateInSupabase(sessionId, sessionType, batchNumber, sto
         }
         return null;
     } catch (err) {
-        console.error('Failed to check duplicate in Supabase:', err);
+        console.error('Failed to check duplicate in supabaseClient:', err);
         return null;
     }
 }
 
 async function checkRMDuplicateQuantity(sessionId, stockCode, batchNumber, expiryDate, quantity) {
-    if (!supabase || !sessionId) return null;
+    if (!supabaseClient || !sessionId) return null;
 
     try {
-        let query = supabase
+        let query = supabaseClient
             .from('stock_scans')
             .select('id,scanned_at,scanned_by,device_id,actual_cases,location')
             .eq('session_id', sessionId)
@@ -441,11 +441,11 @@ async function checkRMDuplicateQuantity(sessionId, stockCode, batchNumber, expir
 }
 
 async function checkFPManualDuplicateQuantity(sessionId, batchNumber, quantity) {
-    if (!supabase || !sessionId) return null;
+    if (!supabaseClient || !sessionId) return null;
 
     try {
         const cleanBatch = String(batchNumber).trim();
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('stock_scans')
             .select('id,scanned_at,scanned_by,device_id,actual_cases,pallet_number')
             .eq('session_id', sessionId)
@@ -471,22 +471,22 @@ async function checkFPManualDuplicateQuantity(sessionId, batchNumber, quantity) 
 
 function saveProductDatabase() {
     localStorage.setItem('productDatabase', JSON.stringify(productDatabase));
-    if (supabase && productsLoadedFromDB) {
+    if (supabaseClient && productsLoadedFromDB) {
         console.log('Product database saved locally');
     }
 }
 
 function saveRawMaterialsDatabase() {
     localStorage.setItem('rawMaterialsDatabase', JSON.stringify(rawMaterialsDatabase));
-    if (supabase && rmProductsLoadedFromDB) {
+    if (supabaseClient && rmProductsLoadedFromDB) {
         console.log('Raw materials database saved locally');
     }
 }
 
 async function addProductToSupabase(batchNumber, stockCode, description) {
-    if (!supabase) return false;
+    if (!supabaseClient) return false;
     try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('products')
             .upsert({
                 batch_number: batchNumber,
@@ -495,16 +495,16 @@ async function addProductToSupabase(batchNumber, stockCode, description) {
             }, { onConflict: 'batch_number' });
         return !error;
     } catch (err) {
-        console.error('Failed to add product to Supabase:', err);
+        console.error('Failed to add product to supabaseClient:', err);
         return false;
     }
 }
 
 async function addRawMaterialToSupabase(stockCode, description, batchNumber, expiryDate) {
-    if (!supabase) return false;
+    if (!supabaseClient) return false;
     const formattedExpiry = convertDMYtoYMD(expiryDate);
     try {
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseClient
             .from('raw_materials')
             .select('id')
             .eq('stock_code', stockCode)
@@ -514,7 +514,7 @@ async function addRawMaterialToSupabase(stockCode, description, batchNumber, exp
 
         if (existing) return true;
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('raw_materials')
             .insert({
                 stock_code: stockCode,
@@ -524,15 +524,15 @@ async function addRawMaterialToSupabase(stockCode, description, batchNumber, exp
             });
         return !error;
     } catch (err) {
-        console.error('Failed to add raw material to Supabase:', err);
+        console.error('Failed to add raw material to supabaseClient:', err);
         return false;
     }
 }
 
 async function addProductTypeToSupabase(stockCode, productType, description) {
-    if (!supabase) return { success: false, error: 'Supabase not available' };
+    if (!supabaseClient) return { success: false, error: 'supabaseClient not available' };
     try {
-        const { data: existing, error: checkError } = await supabase
+        const { data: existing, error: checkError } = await supabaseClient
             .from('product_types')
             .select('stock_code')
             .eq('stock_code', stockCode.toUpperCase())
@@ -541,7 +541,7 @@ async function addProductTypeToSupabase(stockCode, productType, description) {
         if (checkError) return { success: false, error: checkError.message };
         if (existing) return { success: false, error: 'Product already exists', exists: true };
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('product_types')
             .insert({
                 stock_code: stockCode.toUpperCase(),
@@ -565,10 +565,10 @@ async function addProductTypeToSupabase(stockCode, productType, description) {
 }
 
 async function bulkAddProductTypesToSupabase(products) {
-    if (!supabase) return { success: false, error: 'Supabase not available', added: 0, skipped: 0 };
+    if (!supabaseClient) return { success: false, error: 'supabaseClient not available', added: 0, skipped: 0 };
 
     try {
-        const { data: existing, error: fetchError } = await supabase.from('product_types').select('stock_code');
+        const { data: existing, error: fetchError } = await supabaseClient.from('product_types').select('stock_code');
         if (fetchError) return { success: false, error: fetchError.message, added: 0, skipped: 0 };
 
         const existingCodes = new Set((existing || []).map(p => p.stock_code?.toUpperCase()));
@@ -577,7 +577,7 @@ async function bulkAddProductTypesToSupabase(products) {
 
         if (newProducts.length === 0) return { success: true, added: 0, skipped: skippedCount, message: 'All products already exist' };
 
-        const { error: insertError } = await supabase
+        const { error: insertError } = await supabaseClient
             .from('product_types')
             .insert(newProducts.map(p => ({
                 stock_code: p.stock_code?.toUpperCase(),
@@ -605,20 +605,20 @@ async function bulkAddProductTypesToSupabase(products) {
 
 
 // ===========================================
-// LIVE SESSIONS FROM SUPABASE
+// LIVE SESSIONS FROM supabaseClient
 // ===========================================
 
-// Get all live (active/paused) sessions from Supabase
+// Get all live (active/paused) sessions from supabaseClient
 const getLiveSessionsFromSupabase = async (warehouse = null) => {
-    if (!supabase || db.mode !== 'supabase') return [];
+    if (!supabaseClient || db.mode !== 'supabaseClient') return [];
 
     try {
-        const { data, error } = await supabase.rpc('get_live_sessions', {
+        const { data, error } = await supabaseClient.rpc('get_live_sessions', {
             p_warehouse: warehouse
         });
 
         if (error) {
-            console.warn('Failed to get live sessions from Supabase:', error);
+            console.warn('Failed to get live sessions from supabaseClient:', error);
             return [];
         }
 
@@ -631,15 +631,15 @@ const getLiveSessionsFromSupabase = async (warehouse = null) => {
 
 // Get session summary with device info and scan counts
 const getSessionSummaryFromSupabase = async (sessionId) => {
-    if (!supabase || db.mode !== 'supabase' || !sessionId) return null;
+    if (!supabaseClient || db.mode !== 'supabaseClient' || !sessionId) return null;
 
     try {
-        const { data, error } = await supabase.rpc('get_session_summary', {
+        const { data, error } = await supabaseClient.rpc('get_session_summary', {
             p_session_id: sessionId
         });
 
         if (error) {
-            console.warn('Failed to get session summary from Supabase:', error);
+            console.warn('Failed to get session summary from supabaseClient:', error);
             return null;
         }
 
@@ -650,19 +650,19 @@ const getSessionSummaryFromSupabase = async (sessionId) => {
     }
 };
 
-// End a session via Supabase (supervisor action)
+// End a session via supabaseClient (supervisor action)
 const endSessionInSupabase = async (sessionId, endedBy = null) => {
-    if (!supabase || db.mode !== 'supabase' || !sessionId) return null;
+    if (!supabaseClient || db.mode !== 'supabaseClient' || !sessionId) return null;
 
     try {
-        const { data, error } = await supabase.rpc('end_session', {
+        const { data, error } = await supabaseClient.rpc('end_session', {
             p_session_id: sessionId,
             p_ended_by: endedBy || getUserName(),
             p_device_id: DEVICE_ID
         });
 
         if (error) {
-            console.warn('Failed to end session in Supabase:', error);
+            console.warn('Failed to end session in supabaseClient:', error);
             return null;
         }
 

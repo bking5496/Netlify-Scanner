@@ -51,7 +51,7 @@ class ScannerApp {
     }
 
     get usingSupabaseDB() {
-        return db.mode === 'supabase';
+        return db.mode === 'supabaseClient';
     }
 
     toggleLocationScanning() {
@@ -303,7 +303,7 @@ class ScannerApp {
     // Show/hide Location Management page
     showLocationManagement() {
         this.showingLocationManagement = true;
-        // Load locations from Supabase
+        // Load locations from supabaseClient
         loadLocationsFromSupabase(true).then(() => this.render());
     }
 
@@ -375,8 +375,8 @@ class ScannerApp {
     }
 
     async getScansForSession(sessionId) {
-        if (!supabase) return [];
-        const { data, error } = await supabase
+        if (!supabaseClient) return [];
+        const { data, error } = await supabaseClient
             .from('scans')
             .select('*')
             .eq('session_id', sessionId)
@@ -785,7 +785,7 @@ class ScannerApp {
     }
 
     async prefetchReferenceData() {
-        if (!supabase) return;
+        if (!supabaseClient) return;
         await Promise.all([
             loadProductsFromSupabase(),
             loadRawMaterialsFromSupabase(),
@@ -812,8 +812,8 @@ class ScannerApp {
             this.refreshSessionsFromSupabase(true)
         ];
 
-        // Load products in parallel if Supabase is available
-        if (supabase) {
+        // Load products in parallel if supabaseClient is available
+        if (supabaseClient) {
             initPromises.push(
                 loadProductsFromSupabase(),
                 loadRawMaterialsFromSupabase(),
@@ -823,9 +823,9 @@ class ScannerApp {
 
         await Promise.all(initPromises);
 
-        // Sync user and device to Supabase after connection is established
+        // Sync user and device to supabaseClient after connection is established
         const userName = getUserName();
-        if (userName && db.mode === 'supabase') {
+        if (userName && db.mode === 'supabaseClient') {
             const role = getUserRole();
             const warehouse = getUserWarehouse();
             syncUserToSupabase(userName, role, warehouse);
@@ -974,7 +974,7 @@ class ScannerApp {
         const role = getUserRole();
         const warehouse = getUserWarehouse();
 
-        // Sync user and device to Supabase in background
+        // Sync user and device to supabaseClient in background
         if (name) {
             syncUserToSupabase(name, role, warehouse);
             syncDeviceToSupabase();
@@ -1032,14 +1032,14 @@ class ScannerApp {
                 cancelText: 'PML',
                 onConfirm: async () => {
                     setUserWarehouse('PSA');
-                    // Refresh sessions from Supabase before showing list
+                    // Refresh sessions from supabaseClient before showing list
                     await this.refreshSessionsFromSupabase(true);
                     this.selectedStockTakeType = type;
                     this.render();
                 },
                 onCancel: async () => {
                     setUserWarehouse('PML');
-                    // Refresh sessions from Supabase before showing list
+                    // Refresh sessions from supabaseClient before showing list
                     await this.refreshSessionsFromSupabase(true);
                     this.selectedStockTakeType = type;
                     this.render();
@@ -1048,7 +1048,7 @@ class ScannerApp {
             return;
         }
 
-        // Refresh sessions from Supabase before showing list
+        // Refresh sessions from supabaseClient before showing list
         await this.refreshSessionsFromSupabase(true);
         this.selectedStockTakeType = type;
         this.render();
@@ -1267,9 +1267,9 @@ class ScannerApp {
         try {
             console.log('Attempting to end session:', sessionId);
 
-            if (supabaseSessionsEnabled && supabase) {
+            if (supabaseSessionsEnabled && supabaseClient) {
                 // First check if the session exists in stock_takes
-                const { data: existingSession, error: fetchError } = await supabase
+                const { data: existingSession, error: fetchError } = await supabaseClient
                     .from('stock_takes')
                     .select('id, status')
                     .eq('id', sessionId)
@@ -1277,11 +1277,11 @@ class ScannerApp {
 
                 if (fetchError) {
                     console.error('Error fetching session:', fetchError);
-                    // Session might not exist in Supabase, just update locally
-                    console.log('Session not found in Supabase, updating locally only');
+                    // Session might not exist in supabaseClient, just update locally
+                    console.log('Session not found in supabaseClient, updating locally only');
                 } else if (existingSession) {
-                    // Update session status in Supabase (use completed_at, not ended_at)
-                    const { error: updateError } = await supabase
+                    // Update session status in supabaseClient (use completed_at, not ended_at)
+                    const { error: updateError } = await supabaseClient
                         .from('stock_takes')
                         .update({
                             status: 'completed',
@@ -1290,11 +1290,11 @@ class ScannerApp {
                         .eq('id', sessionId);
 
                     if (updateError) {
-                        console.error('Error updating session in Supabase:', updateError);
+                        console.error('Error updating session in supabaseClient:', updateError);
                         // Don't show alert for cloud errors, just log and continue locally
                         console.log('Continuing with local update only');
                     } else {
-                        console.log('Session ended in Supabase successfully');
+                        console.log('Session ended in supabaseClient successfully');
                     }
                 }
             }
@@ -1319,18 +1319,18 @@ class ScannerApp {
         const sessionType = this.activeStockTake?.sessionType || 'FP';
         const sessionId = this.activeStockTake?.id;
 
-        if (supabase && sessionId) {
+        if (supabaseClient && sessionId) {
             // Load ALL scans from stock_scans table, filtered by session
             try {
                 // Only select fields we actually need for display
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('stock_scans')
                     .select('id,scanned_at,raw_code,batch_number,pallet_number,cases_on_pallet,actual_cases,stock_code,description,device_id,scanned_by,session_type,expiry_date,location,site,aisle,rack,unit_type')
                     .eq('session_id', sessionId)
                     .order('scanned_at', { ascending: false });
 
                 if (error) {
-                    console.error('Error loading scans from Supabase:', error);
+                    console.error('Error loading scans from supabaseClient:', error);
                     await logClientEvent('scan-load-failed', 'error', sessionId, { message: error.message });
                     this.scans = [];
                     return;
@@ -1362,7 +1362,7 @@ class ScannerApp {
 
                 console.log(`Loaded ${this.scans.length} scans from stock_scans for session ${sessionId}`);
             } catch (err) {
-                console.error('Failed to load scans from Supabase:', err);
+                console.error('Failed to load scans from supabaseClient:', err);
                 await logClientEvent('scan-load-failed', 'error', sessionId, { message: err.message });
                 this.scans = [];
             }
@@ -1643,8 +1643,8 @@ class ScannerApp {
 
     async checkDuplicate(batchNumber, palletNumber, stockCode = null, expiryDate = null) {
         console.log('checkDuplicate called with:', { batchNumber, palletNumber, stockCode, expiryDate, typeof_pallet: typeof palletNumber });
-        if (supabase && this.activeStockTake?.id) {
-            // Live check against Supabase stock_scans for all devices in this session
+        if (supabaseClient && this.activeStockTake?.id) {
+            // Live check against supabaseClient stock_scans for all devices in this session
             const sessionType = this.activeStockTake?.sessionType || 'FP';
             return await checkDuplicateInSupabase(
                 this.activeStockTake.id,
@@ -2118,11 +2118,11 @@ class ScannerApp {
         // Check if this is an update to an existing pallet scan
         const isUpdate = parsedData.isDuplicatePallet && parsedData.existingScanId;
 
-        console.log('Saving scan:', { parsedData, actualCases, userName, sessionType, sessionId, supabaseEnabled: !!supabase, isUpdate });
+        console.log('Saving scan:', { parsedData, actualCases, userName, sessionType, sessionId, supabaseEnabled: !!supabaseClient, isUpdate });
 
         // For RM items, check if same item+batch+expiry+quantity already exists
         // This catches potential duplicate entries (same count recorded twice)
-        if (sessionType === 'RM' && supabase && sessionId && !isUpdate) {
+        if (sessionType === 'RM' && supabaseClient && sessionId && !isUpdate) {
             const rmDuplicate = await checkRMDuplicateQuantity(
                 sessionId,
                 parsedData.stockCode,
@@ -2169,7 +2169,7 @@ class ScannerApp {
 
         // For FP 5-digit manual entries (no pallet number), check if same batch+quantity exists
         // This catches potential duplicate entries where operator enters same count twice
-        if (sessionType === 'FP' && !parsedData.palletNumber && supabase && sessionId && !isUpdate) {
+        if (sessionType === 'FP' && !parsedData.palletNumber && supabaseClient && sessionId && !isUpdate) {
             const fpManualDuplicate = await checkFPManualDuplicateQuantity(
                 sessionId,
                 parsedData.batchNumber,
@@ -2207,18 +2207,18 @@ class ScannerApp {
             }
         }
 
-        // Check if we have a valid session for Supabase saves
-        if (supabase && !sessionId) {
+        // Check if we have a valid session for supabaseClient saves
+        if (supabaseClient && !sessionId) {
             console.warn('No active session ID - scan will be saved to localStorage only');
             alert('No active session. Please start or join a session first. Scan saved locally.');
         }
 
-        if (supabase && sessionId) {
+        if (supabaseClient && sessionId) {
             // Handle UPDATE for duplicate pallet
             if (isUpdate) {
                 console.log('Updating existing pallet scan:', parsedData.existingScanId);
                 try {
-                    const { data, error } = await supabase
+                    const { data, error } = await supabaseClient
                         .from('stock_scans')
                         .update({
                             actual_cases: actualCases,
@@ -2234,22 +2234,22 @@ class ScannerApp {
                         .select();
 
                     if (error) {
-                        console.error('Supabase update error:', error);
+                        console.error('supabaseClient update error:', error);
                         await logClientEvent('scan-update-failed', 'error', sessionId, { error: error.message, scanId: parsedData.existingScanId });
                         throw error;
                     }
 
-                    console.log('Updated pallet scan in Supabase:', data);
+                    console.log('Updated pallet scan in supabaseClient:', data);
                     await logClientEvent('scan-update', 'info', sessionId, { scanId: parsedData.existingScanId, newCases: actualCases });
                 } catch (err) {
-                    console.error('Failed to update scan in Supabase:', err);
+                    console.error('Failed to update scan in supabaseClient:', err);
                     await logClientEvent('scan-update-failed', 'error', sessionId, { message: err.message });
                     alert('Failed to update scan. Please check your connection.');
                     throw err;
                 }
             } else {
                 // INSERT new scan
-                console.log('Saving to Supabase with sessionId:', sessionId);
+                console.log('Saving to supabaseClient with sessionId:', sessionId);
                 const record = {
                     session_id: sessionId,
                     take_date: this.currentTakeDate,
@@ -2272,21 +2272,21 @@ class ScannerApp {
                 };
 
                 try {
-                    const { data, error } = await supabase
+                    const { data, error } = await supabaseClient
                         .from('stock_scans')
                         .insert([record])
                         .select();
 
                     if (error) {
-                        console.error('Supabase insert error:', error);
+                        console.error('supabaseClient insert error:', error);
                         await logClientEvent('scan-insert-failed', 'error', sessionId, { error: error.message, record });
                         throw error;
                     }
 
-                    console.log('Saved to Supabase stock_scans:', data);
+                    console.log('Saved to supabaseClient stock_scans:', data);
                     await logClientEvent('scan-insert', 'info', sessionId, { scanId: data?.[0]?.id || null });
                 } catch (err) {
-                    console.error('Failed to save to Supabase:', err);
+                    console.error('Failed to save to supabaseClient:', err);
 
                     // Save to offline queue instead of losing the scan
                     offlineSyncQueue.addToQueue(record);
@@ -2310,7 +2310,7 @@ class ScannerApp {
             }
         } else {
             // Fallback to localStorage (offline mode)
-            console.log('Saving to localStorage (no session or Supabase not available)', { supabase: !!supabase, sessionId });
+            console.log('Saving to localStorage (no session or supabaseClient not available)', { supabaseClient: !!supabaseClient, sessionId });
             const scan = {
                 id: 'scan:' + Date.now(),
                 timestamp: Date.now(),
@@ -2412,10 +2412,10 @@ class ScannerApp {
         scan.actualCases = newCases;
         scan.batchNumber = newBatch;
 
-        // Update Supabase if connected
-        if (supabase && this.activeStockTake?.id) {
+        // Update supabaseClient if connected
+        if (supabaseClient && this.activeStockTake?.id) {
             try {
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('stock_scans')
                     .update({
                         actual_cases: newCases,
@@ -2433,8 +2433,8 @@ class ScannerApp {
                 });
 
             } catch (err) {
-                console.error('Failed to update scan in Supabase:', err);
-                alert('Scan updated locally but failed to sync to Supabase.');
+                console.error('Failed to update scan in supabaseClient:', err);
+                alert('Scan updated locally but failed to sync to supabaseClient.');
             }
         } else {
             // Offline mode - update localStorage
@@ -2464,16 +2464,16 @@ class ScannerApp {
 
         if (!confirmed) return;
 
-        if (supabase) {
+        if (supabaseClient) {
             // Delete from stock_scans table
             try {
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('stock_scans')
                     .delete()
                     .eq('id', id);
 
                 if (error) {
-                    console.error('Supabase delete error:', error);
+                    console.error('supabaseClient delete error:', error);
                     await logClientEvent('scan-delete-failed', 'error', this.activeStockTake?.id || null, { scanId: id, message: error.message });
                     throw error;
                 }
@@ -2481,7 +2481,7 @@ class ScannerApp {
                 console.log('Deleted from stock_scans:', id);
                 await logClientEvent('scan-delete', 'warning', this.activeStockTake?.id || null, { scanId: id });
             } catch (err) {
-                console.error('Failed to delete from Supabase:', err);
+                console.error('Failed to delete from supabaseClient:', err);
                 alert('Failed to delete scan from database.');
                 return;
             }
@@ -2888,11 +2888,11 @@ class ScannerApp {
             }
         }
 
-        // Also load sessions from Supabase if available
-        if (supabase && this.isBrowserOnline) {
+        // Also load sessions from supabaseClient if available
+        if (supabaseClient && this.isBrowserOnline) {
             try {
                 // Get sessions from stock_takes table (has started_by info)
-                const { data: stockTakesData, error: stockTakesError } = await supabase
+                const { data: stockTakesData, error: stockTakesError } = await supabaseClient
                     .from('stock_takes')
                     .select('id, session_type, take_date, status, started_by, started_at, metadata')
                     .order('take_date', { ascending: false })
@@ -2941,7 +2941,7 @@ class ScannerApp {
                     const sessionIdsToFetch = stockTakesData.map(s => s.id).filter(Boolean);
                     if (sessionIdsToFetch.length > 0) {
                         try {
-                            const { data: deviceData, error: deviceError } = await supabase
+                            const { data: deviceData, error: deviceError } = await supabaseClient
                                 .from('session_devices')
                                 .select('session_id, device_id, user_name, status')
                                 .in('session_id', sessionIdsToFetch);
@@ -2971,7 +2971,7 @@ class ScannerApp {
                 }
 
                 // Fallback: also check stock_scans for any sessions not in stock_takes
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('stock_scans')
                     .select('session_id, session_type, scanned_at, device_id, scanned_by')
                     .order('scanned_at', { ascending: false });
@@ -3007,7 +3007,7 @@ class ScannerApp {
                     });
                 }
             } catch (e) {
-                console.error('Error loading sessions from Supabase:', e);
+                console.error('Error loading sessions from supabaseClient:', e);
             }
         }
 
@@ -3038,10 +3038,10 @@ class ScannerApp {
         this.historyLoading = true;
         this.render(); // Show loading indicator immediately
 
-        if (!supabase) {
+        if (!supabaseClient) {
             this.historyLoading = false;
             this.historyScans = [];
-            alert('Session history requires Supabase connectivity.');
+            alert('Session history requires supabaseClient connectivity.');
             this.render();
             return;
         }
@@ -3055,7 +3055,7 @@ class ScannerApp {
         }
 
         try {
-            const { data, error } = await supabase
+            const { data, error } = await supabaseClient
                 .from('stock_scans')
                 .select('id,batch_number,stock_code,description,actual_cases,pallet_number,location,site,aisle,rack,expiry_date,unit_type,scanned_at,scanned_by')
                 .eq('session_id', sessionId)
@@ -3151,9 +3151,9 @@ class ScannerApp {
             if (!this.syncInterval) {
                 this.startAutoSync();
             }
-            const modeLabel = db.mode === 'supabase' ? 'Supabase' : 'local cache';
+            const modeLabel = db.mode === 'supabaseClient' ? 'supabaseClient' : 'local cache';
             if (db.mode === 'localStorage') {
-                alert('Connected in offline mode. Data will sync once Supabase is reachable.');
+                alert('Connected in offline mode. Data will sync once supabaseClient is reachable.');
             } else {
                 alert(`✓ Connected to ${modeLabel} successfully!`);
             }
@@ -3617,10 +3617,10 @@ class ScannerApp {
             };
             saveProductDatabase();
 
-            // Save to Supabase products table
-            if (supabase) {
+            // Save to supabaseClient products table
+            if (supabaseClient) {
                 try {
-                    await supabase
+                    await supabaseClient
                         .from('products')
                         .upsert({
                             batch_number: parsed.batchNumber,
@@ -3628,7 +3628,7 @@ class ScannerApp {
                             description: productInfo.description
                         }, { onConflict: 'batch_number' });
                 } catch (err) {
-                    console.error('Error adding to Supabase:', err);
+                    console.error('Error adding to supabaseClient:', err);
                 }
             }
 
@@ -3715,10 +3715,10 @@ class ScannerApp {
                     };
                     saveProductDatabase();
 
-                    // Save to Supabase products table
-                    if (supabase) {
+                    // Save to supabaseClient products table
+                    if (supabaseClient) {
                         try {
-                            await supabase
+                            await supabaseClient
                                 .from('products')
                                 .upsert({
                                     batch_number: parsed.batchNumber,
@@ -3726,7 +3726,7 @@ class ScannerApp {
                                     description: description
                                 }, { onConflict: 'batch_number' });
                         } catch (err) {
-                            console.error('Error adding to Supabase:', err);
+                            console.error('Error adding to supabaseClient:', err);
                         }
                     }
 
@@ -3831,10 +3831,10 @@ class ScannerApp {
         };
         saveProductDatabase();
 
-        // Save to Supabase products table
-        if (supabase) {
+        // Save to supabaseClient products table
+        if (supabaseClient) {
             try {
-                await supabase
+                await supabaseClient
                     .from('products')
                     .upsert({
                         batch_number: parsed.batchNumber,
@@ -3842,7 +3842,7 @@ class ScannerApp {
                         description: productInfo.description
                     }, { onConflict: 'batch_number' });
             } catch (err) {
-                console.error('Error adding to Supabase:', err);
+                console.error('Error adding to supabaseClient:', err);
             }
         }
 
@@ -3935,10 +3935,10 @@ class ScannerApp {
         };
         saveProductDatabase();
 
-        // Save to Supabase
-        if (supabase) {
+        // Save to supabaseClient
+        if (supabaseClient) {
             try {
-                await supabase
+                await supabaseClient
                     .from('products')
                     .upsert({
                         batch_number: scan.batchNumber,
@@ -3946,7 +3946,7 @@ class ScannerApp {
                         description: productInfo.description
                     }, { onConflict: 'batch_number' });
             } catch (err) {
-                console.error('Error adding to Supabase:', err);
+                console.error('Error adding to supabaseClient:', err);
             }
         }
 
@@ -3957,10 +3957,10 @@ class ScannerApp {
             this.scans[scanIndex].description = productInfo.description;
         }
 
-        // Update scan in Supabase
-        if (supabase && scanId) {
+        // Update scan in supabaseClient
+        if (supabaseClient && scanId) {
             try {
-                await supabase
+                await supabaseClient
                     .from('stock_scans')
                     .update({
                         stock_code: stockCode,
@@ -3968,7 +3968,7 @@ class ScannerApp {
                     })
                     .eq('id', scanId);
             } catch (err) {
-                console.error('Error updating scan in Supabase:', err);
+                console.error('Error updating scan in supabaseClient:', err);
             }
         }
 
@@ -4384,10 +4384,10 @@ class ScannerApp {
                     return;
                 }
 
-                // 1. Save Product Type to Supabase
+                // 1. Save Product Type to supabaseClient
                 await addProductTypeToSupabase(parsed.stockCode, type, description);
 
-                // 2. Save Raw Material info locally AND to Supabase
+                // 2. Save Raw Material info locally AND to supabaseClient
                 if (!rawMaterialsDatabase[parsed.stockCode]) {
                     rawMaterialsDatabase[parsed.stockCode] = { description, batches: {} };
                 }
@@ -4402,7 +4402,7 @@ class ScannerApp {
                 }
                 saveRawMaterialsDatabase();
 
-                // 3. Save to Supabase raw_materials table
+                // 3. Save to supabaseClient raw_materials table
                 await addRawMaterialToSupabase(parsed.stockCode, description, parsed.batchNumber, parsed.expiryDate);
 
                 // 4. Update parsed object
@@ -4560,7 +4560,7 @@ class ScannerApp {
             }
             saveRawMaterialsDatabase();
 
-            // Add to Supabase raw materials
+            // Add to supabaseClient raw materials
             await addRawMaterialToSupabase(stockCode, description, scan.batchNumber, scan.expiryDate);
 
             // Update the scan
@@ -4571,10 +4571,10 @@ class ScannerApp {
                 this.scans[scanIndex].unitType = unitType;
             }
 
-            // Update scan in Supabase if it exists
-            if (supabase && scan.id) {
+            // Update scan in supabaseClient if it exists
+            if (supabaseClient && scan.id) {
                 try {
-                    await supabase
+                    await supabaseClient
                         .from('stock_scans')
                         .update({
                             stock_code: stockCode,
@@ -4583,7 +4583,7 @@ class ScannerApp {
                         })
                         .eq('id', scan.id);
                 } catch (err) {
-                    console.error('Error updating scan in Supabase:', err);
+                    console.error('Error updating scan in supabaseClient:', err);
                 }
             }
 
@@ -4598,10 +4598,10 @@ class ScannerApp {
             productDatabase[scan.batchNumber] = { stockCode, description };
             saveProductDatabase();
 
-            // Add to Supabase
-            if (supabase) {
+            // Add to supabaseClient
+            if (supabaseClient) {
                 try {
-                    await supabase
+                    await supabaseClient
                         .from('products')
                         .upsert({
                             batch_number: scan.batchNumber,
@@ -4609,7 +4609,7 @@ class ScannerApp {
                             description: description
                         }, { onConflict: 'batch_number' });
                 } catch (err) {
-                    console.error('Error adding to Supabase:', err);
+                    console.error('Error adding to supabaseClient:', err);
                 }
             }
 
@@ -4620,10 +4620,10 @@ class ScannerApp {
                 this.scans[scanIndex].description = description;
             }
 
-            // Update scan in Supabase if it exists
-            if (supabase && scan.id) {
+            // Update scan in supabaseClient if it exists
+            if (supabaseClient && scan.id) {
                 try {
-                    await supabase
+                    await supabaseClient
                         .from('stock_scans')
                         .update({
                             stock_code: stockCode,
@@ -4631,7 +4631,7 @@ class ScannerApp {
                         })
                         .eq('id', scan.id);
                 } catch (err) {
-                    console.error('Error updating scan in Supabase:', err);
+                    console.error('Error updating scan in supabaseClient:', err);
                 }
             }
 
@@ -4759,7 +4759,7 @@ class ScannerApp {
     }
 
     async refreshProductsFromCloud() {
-        if (!supabase) {
+        if (!supabaseClient) {
             alert('Cloud sync not available');
             return;
         }
@@ -4776,16 +4776,16 @@ class ScannerApp {
             if (isRM) {
                 const loaded = await loadRawMaterialsFromSupabase(true); // Force reload
                 if (loaded) {
-                    alert(`Loaded ${Object.keys(rawMaterialsDatabase).length} raw materials from Supabase`);
+                    alert(`Loaded ${Object.keys(rawMaterialsDatabase).length} raw materials from supabaseClient`);
                 } else {
-                    alert('No raw materials found in Supabase or error occurred');
+                    alert('No raw materials found in supabaseClient or error occurred');
                 }
             } else {
                 const loaded = await loadProductsFromSupabase(true); // Force reload
                 if (loaded) {
-                    alert(`Loaded ${Object.keys(productDatabase).length} products from Supabase`);
+                    alert(`Loaded ${Object.keys(productDatabase).length} products from supabaseClient`);
                 } else {
-                    alert('No products found in Supabase or error occurred');
+                    alert('No products found in supabaseClient or error occurred');
                 }
             }
         } catch (err) {
@@ -5833,10 +5833,10 @@ class ScannerApp {
                             </div>
                             
                             <div class="p-4 sm:p-6 pt-0 text-center">
-                                ${supabase && this.isBrowserOnline ? `
+                                ${supabaseClient && this.isBrowserOnline ? `
                                     <div class="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100">
                                         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                        <span>Connected to Supabase</span>
+                                        <span>Connected to supabaseClient</span>
                                     </div>
                                 ` : `
                                     <div class="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-full text-xs font-bold border border-slate-200">
@@ -7405,7 +7405,7 @@ window.app = app;
 // On startup, check for pending offline scans and sync if online
 (async () => {
     const pendingCount = offlineSyncQueue.getPendingCount();
-    if (pendingCount > 0 && navigator.onLine && supabase) {
+    if (pendingCount > 0 && navigator.onLine && supabaseClient) {
         console.log(`Found ${pendingCount} offline scans on startup, syncing...`);
         const result = await syncOfflineScans();
         if (result.synced > 0) {
