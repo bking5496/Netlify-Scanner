@@ -7199,6 +7199,30 @@ class ScannerApp {
                                     ` : ''}
                                 </div>
                             </div>
+
+                            <!-- Location Database Management -->
+                            <div class="space-y-4">
+                                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Location Database</label>
+                                
+                                <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden p-4 space-y-3">
+                                    <p class="text-sm text-slate-600">Add locations to the database for use across all sessions.</p>
+                                    
+                                    <div class="flex gap-3">
+                                        <button onclick="app.addRackLocation()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                                            Add Rack
+                                        </button>
+                                        <button onclick="app.addFloorLocationDB()" class="flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z"/></svg>
+                                            Add Floor
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                                        Locations are saved to the cloud and available on all devices. Select Site (PSA/PML) and Product Area (FP/RM) when adding.
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
